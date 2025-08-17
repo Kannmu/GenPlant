@@ -1,2 +1,6 @@
 # GenPlant
-A web-based randomlized plant generator
+
+A web-based randomized plant generator
+
+
+
