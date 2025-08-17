@@ -51,7 +51,7 @@ body {
     gap: 16px;
     align-items: center;
     margin: 0 auto;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1); */
 }
 
 #seedInput {
@@ -131,7 +131,7 @@ canvas {
     max-height: 100%;
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-soft);
-    background: var(--surface-blur);
+    background: #CDF1AA;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);

@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { OrbitControls } from './libs/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-let scene, camera, renderer, controls;
+let scene, camera, renderer, controls, plantObject;
 
 export function init(canvas) {
     // 1. Scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf0f0f0);
+    scene.background = new THREE.Color(0xCDF1AA);
 
     // 2. Camera
     camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
@@ -67,4 +68,16 @@ export function clear() {
     }
     plantObject = null;
 }
+
+
+export function loadDefaultModel() {
+    const loader = new GLTFLoader();
+    loader.load('../Data/DefaultModel/defaultModel.gltf', function (gltf) {
+        scene.add(gltf.scene);
+    }, undefined, function (error) {
+        console.error(error);
+    });
+}
+
+
 

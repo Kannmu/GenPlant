@@ -11,7 +11,7 @@ function init() {
     canvas = document.getElementById('three-canvas');
 
     // 2. 初始化渲染器
-    // renderer.init(canvas);
+    renderer.init(canvas);
 
     // 3. 设置事件监听器
     generateButton.addEventListener('click', handleGenerateClick);
@@ -36,8 +36,13 @@ function handleGenerateClick() {
             seedInput.value = getRandomSeed();
         }
 
-        // 3. 生成新植物
-        const plant = generator.generate(seed);
+        try{
+            // 3. 生成新植物
+            const plant = generator.generate(seed);
+        }catch(error){
+            console.error('生成植物时出错:', error, 'Presenting Default Plant Model');
+            const plant = renderer.loadDefaultModel();
+        }
 
         // 4. 将植物添加到场景
         renderer.add(plant);
