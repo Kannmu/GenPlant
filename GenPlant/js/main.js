@@ -1,13 +1,15 @@
 import * as generator from './generator/index.js';
 import * as renderer from './renderer.js';
 
-let seedInput, randomSeedButton, generateButton, canvas;
+let seedInput, randomSeedButton, generateButton,resetCameraButton, canvas;
 
 function init() {
     // 1. 获取DOM元素引用
     seedInput = document.getElementById('seedInput');
     randomSeedButton = document.getElementById('randomBtn');
     generateButton = document.getElementById('generateBtn');
+    resetCameraButton = document.getElementById('resetCameraButton');
+
     canvas = document.getElementById('three-canvas');
 
     // 2. 初始化渲染器
@@ -16,7 +18,11 @@ function init() {
     // 3. 设置事件监听器
     generateButton.addEventListener('click', handleGenerateClick);
     randomSeedButton.addEventListener('click', handleRandomSeedClick);
+    resetCameraButton.addEventListener('click', handleResetCameraClick);
+}
 
+function handleResetCameraClick() {
+    renderer.reset();
 }
 
 function handleRandomSeedClick() {
@@ -25,7 +31,7 @@ function handleRandomSeedClick() {
     console.log('Random Seed Set to:', seedInput.value);
 }
 
-function handleGenerateClick() {
+async function handleGenerateClick() {
     try {
         // 1. 清理旧植物
         renderer.clear();
@@ -35,20 +41,31 @@ function handleGenerateClick() {
         if (!seed) {
             seedInput.value = getRandomSeed();
         }
-
+        let plant = null;
         try{
             // 3. 生成新植物
-            const plant = generator.generate(seed);
+            plant = generator.generate(seed);
         }catch(error){
-            console.error('生成植物时出错:', error, 'Presenting Default Plant Model');
-            const plant = renderer.loadDefaultModel();
+            console.error('Error in Generating Plant:', error, 'Presenting Default Plant Model');
         }
 
-        // 4. 将植物添加到场景
-        renderer.add(plant);
+        // Load Default Model if Plant is not generated
+        if (!plant) {
+            try{
+                plant = await renderer.loadDefaultModel();
+            }catch(error){
+                console.error('Error in Loading Default Model:', error);
+            }
+        }
+
+        if (plant) {
+            renderer.add(plant);
+        }
+
+        // renderer.animate()
     } catch (error) {
-        console.error('生成植物时出错:', error);
-        alert('生成植物时出错。请查看控制台获取更多信息。');
+        console.error('Error in Generating Plant:', error);
+        // alert('Error in Generating Plant. Please check the console for more information.');
     }
 }
 

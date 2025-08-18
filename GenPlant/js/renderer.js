@@ -2,7 +2,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-let scene, camera, renderer, controls, plantObject;
+let scene, camera, renderer, controls, plantObject, clock, animationFrameId;
+
+
+const INITIAL_CAMERA_POSITION = new THREE.Vector3(0, 50, 50);
+const INITIAL_CAMERA_LOOKAT = new THREE.Vector3(0, 0, 0);
 
 export function init(canvas) {
     // 1. Scene
@@ -11,43 +15,98 @@ export function init(canvas) {
 
     // 2. Camera
     camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-    camera.position.set(0, 20, 50);
-    camera.lookAt(0, 0, 0);
+    camera.position.copy(INITIAL_CAMERA_POSITION);
+    camera.lookAt(INITIAL_CAMERA_LOOKAT);
 
     // 3. Renderer
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
     renderer.setSize(canvas.clientWidth, canvas.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.5;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     // 4. Lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(50, 50, 50);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
+    directionalLight.position.set(10, 20, 10);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.top = 30;
+    directionalLight.shadow.camera.bottom = -30;
+    directionalLight.shadow.camera.left = -30;
+    directionalLight.shadow.camera.right = 30;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 100;
     scene.add(directionalLight);
+
+    // Ground Plane
+    const groundGeometry = new THREE.CircleGeometry(30, 64);
+    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x99b882 });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
 
     // 5. Controls
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.screenSpacePanning = false;
+    controls.dampingFactor = 0.1;
+    controls.screenSpacePanning = true;
+    controls.enablePan = false;
     controls.minDistance = 10;
     controls.maxDistance = 500;
     controls.maxPolarAngle = Math.PI / 2;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 3;
+
+    clock = new THREE.Clock();
+    document.addEventListener('visibilitychange', handleVisibilityChange, false);
     // 6. Start rendering loop
     animate();
 }
 
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
+function handleVisibilityChange() {
+    if (document.hidden) {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+        if (clock && clock.running) {
+            clock.stop();
+        }
+    } else {
+        if (clock) {
+            clock.start();
+        }
+        if (!animationFrameId) {
+            animate();
+        }
+    }
+}
+
+export function animate() {
+    animationFrameId = requestAnimationFrame(animate);
+    const deltaTime = clock.getDelta();
+    controls.update(deltaTime);
     renderer.render(scene, camera);
 }
 
 export function add(object) {
     plantObject = object;
     if (plantObject) {
+        plantObject.traverse(function (child) {
+            if (child.isMesh) {
+                child.castShadow = true;
+            }
+        });
         scene.add(plantObject);
+        controls.target.copy(plantObject.position);
+        reset();
     }
 }
 
@@ -69,13 +128,39 @@ export function clear() {
     plantObject = null;
 }
 
+export function reset() {
+    controls.reset();
+}
 
 export function loadDefaultModel() {
-    const loader = new GLTFLoader();
-    loader.load('../Data/DefaultModel/defaultModel.gltf', function (gltf) {
-        scene.add(gltf.scene);
-    }, undefined, function (error) {
-        console.error(error);
+    return new Promise((resolve, reject) => {
+        const loader = new GLTFLoader();
+        loader.load('data/defaultModel/glb/defaultModel.glb', function (glb) {
+            glb.scene.traverse(function (child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    if (child.material.map) {
+                        child.material.map.encoding = THREE.sRGBEncoding;
+                    }
+                }
+            });
+            const model = glb.scene;
+
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            model.position.sub(center);
+
+            const size = box.getSize(new THREE.Vector3());
+            const maxSize = Math.max(size.x, size.y, size.z);
+            const desiredSize = 75;
+            const scale = desiredSize / maxSize;
+            model.scale.set(scale, scale, scale);
+
+            resolve(model);
+        }, undefined, function (error) {
+            console.error("Error in Loading Default Model:", error);
+            reject(error);
+        });
     });
 }
 

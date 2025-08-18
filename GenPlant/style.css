@@ -3,7 +3,7 @@ html {
 }
 
 body {
-    margin: 0;
+    margin: 10px;
     overflow: hidden; /* 隐藏滚动条，因为Three.js画布会占据整个视口 */
     font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: linear-gradient(0deg, #d0ffca 0%, #fffeb9 100%);
@@ -22,7 +22,7 @@ body {
     --shadow-soft: 0 10px 25px -5px rgba(0, 0, 0, 0.158), 0 10px 10px -5px rgba(0, 0, 0, 0.11);
     --shadow-medium: 0 20px 25px -5px rgba(0, 0, 0, 0.185), 0 10px 10px -5px rgba(0, 0, 0, 0.11);
     --border-radius: 30px;
-    --border-radius-lg: 40px;
+    --border-radius-lg: 60px;
 }
 
 #app-container {
@@ -39,7 +39,7 @@ body {
     position: relative;
     justify-content: center;
     top: 30px;
-    width: 70vw;
+    width: 80vw;
     background: var(--surface-blur);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -123,18 +123,20 @@ canvas {
 
 #three-canvas {
     position: relative;
+    box-sizing: border-box;
     top: 60px;
     width: 70vw;
-    padding: 20px 20px;
     height: min(700px, 70vh);
-    max-width: 100%;
+    padding: 20px 20px;
+    /* max-width: calc(100vw - 40px); */
     max-height: 100%;
     border-radius: var(--border-radius-lg);
     box-shadow: var(--shadow-soft);
     background: #CDF1AA;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin: 0 auto;
+    /* display: block; */
 }
 
 /* 加载状态 */
@@ -201,6 +203,12 @@ canvas {
         max-width: 280px;
         padding: 14px 20px;
     }
+
+    #three-canvas {
+        width: 90vw;
+        max-width: calc(100vw - 32px);
+        height: 60vh;
+    }
 }
 
 @media (max-width: 480px) {
@@ -212,10 +220,9 @@ canvas {
     }
     
     #three-canvas {
-        width: calc(100% - 24px);
-        max-width: 60vw;
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
         height: 60vh;
         margin: 0 12px;
-        padding: 12px;
     }
 }
