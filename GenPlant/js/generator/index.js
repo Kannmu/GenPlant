@@ -3,10 +3,11 @@ import * as THREE from "three";
 import {createParameters} from './parameters.js'
 import {createStructure} from './structure.js'
 import {createGeometry} from './geometry.js'
+import {applyMaterial} from './material.js'
 
 
 export function generate(seed){
-    let parameters, structure, geometry;
+    let parameters, structure, geometries;
 
     let plant = new THREE.Group();
 
@@ -19,10 +20,13 @@ export function generate(seed){
     console.log("Generated Structure:",structure);
 
     // Create Geometry
-    geometry = createGeometry(parameters, structure);
-    console.log("Generated Geometry:");
-    plant.add(geometry);
+    geometries = createGeometry(parameters, structure);
+    console.log("Geometry Created");
 
+
+    // Create Material
+    plant = applyMaterial(parameters, structure, geometries);
+    console.log("Material Applied");
 
     return plant;
 }

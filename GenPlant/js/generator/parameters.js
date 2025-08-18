@@ -29,15 +29,19 @@ export function createParameters(seed) {
                 curviness: new THREE.Vector2(0.5, 0.1),
             },
             branching: {
-                levels: randomInt(3, 5), // 最大分支深度
+                levels: randomInt(3, 7), // 最大分支深度
+                // levels: 1, // 最大分支深度
                 // { 最小, 最大 }
                 branchesPerSplit: { min: 1, max: 3 },
+                
                 // { 子枝与母枝的夹角, 子枝之间的夹角 }
-                splitAngle: { parent: randomFloat(10, 60), sibling: randomFloat(10, 60) }, // in degrees
-                lengthDecay: randomFloat(0.3, 0.8), // 子分支长度衰减率
+                splitAngleRange: {min: Math.PI/10, max: Math.PI/4}, // in radius
+                
+                lengthDecay: randomFloat(0.6, 0.9), // 子分支长度衰减率
+                radiusDecay: randomFloat(0.6, 0.8), // 子分支半径衰减率
                 curviness: new THREE.Vector2(1.5, 0.2),// (频率, 振幅)
                 // { 最小, 最大 }
-                rotationAngle: { min: randomFloat(10, 90), max: randomFloat(90, 180) }, // in degrees
+                rotationAngle: { min: randomFloat(0, Math.PI/2), max: randomFloat(Math.PI/2, Math.PI) }, // in radius
             },
         },
     }

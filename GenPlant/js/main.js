@@ -29,6 +29,8 @@ function handleRandomSeedClick() {
     // 生成1到1e10之间的随机整数作为种子
     seedInput.value = getRandomSeed();
     console.log('Random Seed Set to:', seedInput.value);
+    // 生成新植物
+    handleGenerateClick();
 }
 
 async function handleGenerateClick() {

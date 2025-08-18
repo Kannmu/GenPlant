@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-let scene, camera, renderer, controls, plantObject, clock, animationFrameId;
+let scene, camera, renderer, controls, plantObject, clock, animationFrameId, ground;
 
 const INITIAL_CAMERA_POSITION = new THREE.Vector3(0, 50, 50);
 const INITIAL_CAMERA_LOOKAT = new THREE.Vector3(0, 0, 0);
@@ -44,10 +44,10 @@ export function init(canvas) {
     scene.add(directionalLight);
 
     // Ground Plane
-    const groundGeometry = new THREE.CylinderGeometry(30, 30, 2, 64);
+    const groundGeometry = new THREE.CylinderGeometry(30, 30, 2, 64);;
+
     const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x99b882 });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    // ground.rotation.x = -Math.PI / 2;
+    ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.receiveShadow = true;
     scene.add(ground);
 
@@ -99,30 +99,49 @@ export function add(object) {
     clear();
     plantObject = object;
     if (plantObject) {
-        // Center and scale the model to fit the scene
+        console.log("Adjusting Model size")
+        // Center and scale the model to fit the camera view
         const box = new THREE.Box3().setFromObject(plantObject);
         const center = box.getCenter(new THREE.Vector3());
         plantObject.position.sub(center);
 
         const size = box.getSize(new THREE.Vector3());
         const maxSize = Math.max(size.x, size.y, size.z);
-        const desiredSize = 75;
+        
+        // Calculate desired size based on camera parameters for optimal fit
+        const desiredSize = 50;
+        
         // Avoid division by zero if the model has no size
         if (maxSize > 0) {
             const scale = desiredSize / maxSize;
             plantObject.scale.set(scale, scale, scale);
         }
 
+        // Update the world matrix to get the new bounding box
+        plantObject.updateMatrixWorld(true);
+        const scaledBox = new THREE.Box3().setFromObject(plantObject);
+        const new_center = scaledBox.getCenter(new THREE.Vector3());
+
+        // Center the object on XZ plane and move its lowest point to y = 1
+        plantObject.position.x -= new_center.x;
+        plantObject.position.y -= (scaledBox.min.y);
+        plantObject.position.z -= new_center.z;
+
         plantObject.traverse(function (child) {
             if (child.isMesh) {
                 child.castShadow = true;
             }
         });
+        
+        // Move ground to the bottom of plantObject
+        // ground.position.set(0, box.min.y, 0); 
+
         scene.add(plantObject);
-        controls.target.copy(plantObject.position);
+        controls.target.copy(ground.position);
         reset();
     }
 }
+
 
 export function clear() {
     if (plantObject) {

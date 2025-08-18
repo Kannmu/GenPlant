@@ -23,10 +23,12 @@ function generateTreeStructure(parameters) {
     const root = {
         id: nodeCounter++,
         parentID: null,
+        type: "trunk",
         level: 0,
         position: new THREE.Vector3(0, 0, 0),
-        orientation: new THREE.Vector3(randomFloat(-0.5, 0.5), randomFloat(-1, 1), randomFloat(-0.5, 0.5)),
-        length: randomFloat(0.2, 2),
+        orientation: new THREE.Vector3(randomFloat(-0.3, 0.3), randomFloat(0.8, 1), randomFloat(-0.3, 0.3)).normalize(),
+        length: 5 + randomFloat(7, 20) * parameters.archetype.growthForm,
+        radius: randomFloat(0.2, 0.8),
         children: [],
         attachments: []
     };
@@ -44,16 +46,17 @@ function generateTreeStructure(parameters) {
         // 3. 决定分支数量
         const { min, max } = parameters.structure.branching.branchesPerSplit;
         const numBranches = randomInt(min, max);
-
+        
         const parentOrientation = parentNode.orientation.clone();
 
         // 4. 创建子节点并递归
         for (let i = 0; i < numBranches; i++) {
-            const { splitAngle, rotationAngle } = parameters.structure.branching;
-
-            const newOrientation = calculateChildOrientation(parentOrientation, splitAngle, rotationAngle);
+            const { splitAngleRange, rotationAngle } = parameters.structure.branching;
+            const newOrientation = calculateChildOrientation(parentOrientation, splitAngleRange, rotationAngle);
             const newLength = calculateChildLength(parentNode.length, parameters.structure.branching.lengthDecay);
             const newPosition = calculateChildPosition(parentNode.position, parentOrientation, parentNode.length);
+            const newRadius = calculateChildRadius(parentNode.radius, parameters.structure.branching.radiusDecay);
+
 
             const childNode = {
                 id: nodeCounter++,
@@ -62,6 +65,7 @@ function generateTreeStructure(parameters) {
                 position: newPosition,
                 orientation: newOrientation,
                 length: newLength,
+                radius: newRadius,
                 children: [],
                 attachments: []
             };
@@ -95,18 +99,22 @@ function calculateChildOrientation(parentOrientation, splitAngleRange, rotationA
     }
 
     // First, apply the split angle rotation.
-    const splitQuaternion = new THREE.Quaternion().setFromAxisAngle(rotationAxis, THREE.MathUtils.degToRad(splitAngle));
+    const splitQuaternion = new THREE.Quaternion().setFromAxisAngle(rotationAxis, splitAngle);
     newOrientation.applyQuaternion(splitQuaternion);
 
     // Second, apply the rotation around the original parent axis to distribute branches three-dimensionally.
-    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(parentOrientation, THREE.MathUtils.degToRad(rotationAngle));
+    const rotationQuaternion = new THREE.Quaternion().setFromAxisAngle(parentOrientation, rotationAngle);
     newOrientation.applyQuaternion(rotationQuaternion);
 
     return newOrientation;
 }
 
 function calculateChildLength(parentLength, lengthDecay) {
-    return parentLength * lengthDecay * randomFloat(0.5, 1.5);
+    return parentLength * lengthDecay * randomFloat(0.8, 1.2);
+}
+
+function calculateChildRadius(parentRadius, radiusDecay) {
+    return parentRadius * radiusDecay * randomFloat(0.9, 1.1);
 }
 
 function calculateChildPosition(parentPosition, parentOrientation, parentLength) {
