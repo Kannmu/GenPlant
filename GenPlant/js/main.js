@@ -15,7 +15,7 @@ function init() {
     // 2. 初始化渲染器
     renderer.init(canvas);
 
-    // 3. 设置事件监听器
+    // 4. 设置事件监听器
     generateButton.addEventListener('click', handleGenerateClick);
     randomSeedButton.addEventListener('click', handleRandomSeedClick);
     resetCameraButton.addEventListener('click', handleResetCameraClick);
@@ -38,9 +38,11 @@ async function handleGenerateClick() {
 
         // 2. 获取或生成新种子
         let seed = seedInput.value;
-        if (!seed) {
-            seedInput.value = getRandomSeed();
+        if (!seed || isNaN(seed) || seed === 0) {
+            seed = getRandomSeed();
+            seedInput.value = seed;
         }
+
         let plant = null;
         try{
             // 3. 生成新植物

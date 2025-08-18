@@ -4,7 +4,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 let scene, camera, renderer, controls, plantObject, clock, animationFrameId;
 
-
 const INITIAL_CAMERA_POSITION = new THREE.Vector3(0, 50, 50);
 const INITIAL_CAMERA_LOOKAT = new THREE.Vector3(0, 0, 0);
 
@@ -45,10 +44,10 @@ export function init(canvas) {
     scene.add(directionalLight);
 
     // Ground Plane
-    const groundGeometry = new THREE.CircleGeometry(30, 64);
+    const groundGeometry = new THREE.CylinderGeometry(30, 30, 2, 64);
     const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x99b882 });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
+    // ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
@@ -97,8 +96,23 @@ export function animate() {
 }
 
 export function add(object) {
+    clear();
     plantObject = object;
     if (plantObject) {
+        // Center and scale the model to fit the scene
+        const box = new THREE.Box3().setFromObject(plantObject);
+        const center = box.getCenter(new THREE.Vector3());
+        plantObject.position.sub(center);
+
+        const size = box.getSize(new THREE.Vector3());
+        const maxSize = Math.max(size.x, size.y, size.z);
+        const desiredSize = 75;
+        // Avoid division by zero if the model has no size
+        if (maxSize > 0) {
+            const scale = desiredSize / maxSize;
+            plantObject.scale.set(scale, scale, scale);
+        }
+
         plantObject.traverse(function (child) {
             if (child.isMesh) {
                 child.castShadow = true;
@@ -145,17 +159,6 @@ export function loadDefaultModel() {
                 }
             });
             const model = glb.scene;
-
-            const box = new THREE.Box3().setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            model.position.sub(center);
-
-            const size = box.getSize(new THREE.Vector3());
-            const maxSize = Math.max(size.x, size.y, size.z);
-            const desiredSize = 75;
-            const scale = desiredSize / maxSize;
-            model.scale.set(scale, scale, scale);
-
             resolve(model);
         }, undefined, function (error) {
             console.error("Error in Loading Default Model:", error);
