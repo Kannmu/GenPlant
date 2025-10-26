@@ -1,139 +1,206 @@
 import * as THREE from "three";
 import { random, randomFloat, randomInt, choice } from '../util/random.js';
+import { GEOMETRY_CONFIG } from '../config/constants.js';
+import { calculateTubeSegments } from '../util/geometry.js';
+
+// Frenet frames缓存，避免重复计算
+const frenetFramesCache = new WeakMap();
 
 
 export function createGeometry(parameters, structure) {
     const geometries = [];
 
-    function _createBranch(node, startRadius) {
-        const branchLength = node.length;
+    function _createBranch(node, parentNode) {
+        if (!node.curve) {
+            for (const child of node.children) {
+                _createBranch(child, node);
+            }
+            return;
+        }
 
-        // const startRadius = node.radius;
-        const endRadius = startRadius * parameters.structure.branching.radiusDecay;
-
-        const finalStartRadius = Math.max(0.05, startRadius);
-        const finalEndRadius = Math.max(0.05, endRadius);
-
-        const cylinder = new THREE.CylinderGeometry(
-            finalEndRadius,   // radiusTop
-            finalStartRadius, // radiusBottom
-            branchLength,     // height
-            10                 // radialSegments
+        const startRadius = node.startRadius;
+        const endRadius = node.endRadius;
+        const { TUBE_MESH } = GEOMETRY_CONFIG;
+        const { radialSegments, tubularSegments } = calculateTubeSegments(
+            startRadius,
+            node.curve.getLength(),
+            TUBE_MESH
         );
 
-        // Create a transformation matrix to position and orient the cylinder.
-        const matrix = new THREE.Matrix4();
-        const quaternion = new THREE.Quaternion();
-        const upVector = new THREE.Vector3(0, 1, 0); // Default orientation of CylinderGeometry
+        const meshData = generateTubeMesh(node.curve, tubularSegments, radialSegments, startRadius, endRadius);
 
-        // Calculate the rotation required to align the cylinder with the branch's orientation.
-        quaternion.setFromUnitVectors(upVector, node.orientation.clone().normalize());
+        // 分支与父节点连接的核心逻辑
+        if (parentNode && parentNode.curve && typeof node.attachmentT === 'number') {
+            // 确保父节点的Frenet框架已计算并缓存，避免重复计算
+            if (!parentNode.tubularSegments) {
+                const parentSegments = calculateTubeSegments(
+                    parentNode.startRadius,
+                    parentNode.curve.getLength(),
+                    TUBE_MESH
+                );
+                parentNode.tubularSegments = parentSegments.tubularSegments;
+            }
+            if (!parentNode.frenetFrames) {
+                parentNode.frenetFrames = parentNode.curve.computeFrenetFrames(parentNode.tubularSegments, false);
+            }
 
-        // Calculate the world position of the center of the cylinder.
-        // It's the node's base position plus half the length along its orientation vector.
-        const centerPosition = new THREE.Vector3()
-            .copy(node.position)
-            .add(node.orientation.clone().multiplyScalar(branchLength / 2));
+            const parentFrames = parentNode.frenetFrames;
+            const parentTubularSegments = parentNode.tubularSegments;
+            const t_parent = node.attachmentT;
 
-        // Compose the rotation and translation into the single matrix.
-        matrix.makeRotationFromQuaternion(quaternion);
-        matrix.setPosition(centerPosition);
+            const parentPoint = parentNode.curve.getPointAt(t_parent);
+            const parentRadius = THREE.MathUtils.lerp(parentNode.startRadius, parentNode.endRadius, t_parent);
 
-        // Apply the transformation to the geometry.
-        cylinder.applyMatrix4(matrix);
+            // Find the closest frame on the parent curve to the attachment point.
+            const parentFrameIndex = Math.round(t_parent * parentTubularSegments);
+            const parentTangent = parentFrames.tangents[parentFrameIndex];
 
-        geometries.push(cylinder);
+            // Define a transition length for smoothing the joint.
+            const { BRANCH_STITCHING } = GEOMETRY_CONFIG;
+            const transitionDistance = parentRadius * BRANCH_STITCHING.TRANSITION_DISTANCE_MULTIPLIER; 
 
-        for (const child of node.children) {
-            _createBranch(child, finalEndRadius);
-        }
-    }
-    _createBranch(structure,structure.radius);
-    return geometries;
-}
+            const childBranchLength = node.curve.getLength();
+            const transitionSegments = Math.min(
+                tubularSegments,
+                Math.max(
+                    BRANCH_STITCHING.MIN_TRANSITION_SEGMENTS, 
+                    Math.ceil((transitionDistance / childBranchLength) * tubularSegments)
+                )
+            );
 
+            // Pre-calculate the target normals on the parent surface for each radial angle.
+            const targetNormals = [];
+            for (let j = 0; j <= radialSegments; j++) {
+                const baseVertexIndex = j * 3;
+                const baseVertex = new THREE.Vector3().fromArray(meshData.vertices, baseVertexIndex);
+                const offsetVector = baseVertex.clone().sub(parentPoint);
+                const tangentProjection = parentTangent.clone().multiplyScalar(offsetVector.dot(parentTangent));
+                const perpendicularVector = offsetVector.clone().sub(tangentProjection);
+                targetNormals.push(perpendicularVector.clone().normalize());
+            }
 
-export function mergeGeometries(geometries, threshold = 0.0001) {
-    const mergedGeometry = new THREE.BufferGeometry();
+            // Apply the transition over the initial segments of the child branch.
+            for (let i = 0; i < transitionSegments; i++) {
+                // lerpFactor goes from 1.0 at the base (i=0) to 0.0 at the end of the transition.
+                const lerpFactor = (transitionSegments <= 1) ? 1.0 : 1.0 - (i / (transitionSegments - 1));
 
-    const finalPositions = [];
-    const finalNormals = [];
-    const finalUvs = [];
-    const finalIndices = [];
+                const t_child = i / tubularSegments;
+                const childCenterPoint = node.curve.getPointAt(t_child);
+                const actualRadiusAt_i = Math.max(
+                    TUBE_MESH.MIN_RADIUS, 
+                    THREE.MathUtils.lerp(node.startRadius, node.endRadius, t_child)
+                );
 
-    const vertexMap = new Map(); // Maps a quantized vertex position to its new index
-    // Calculate precision from threshold to create a hash key
-    const precision = Math.pow(10, -Math.log10(threshold));
+                // Interpolate center point, from parent attachment point to child's curve.
+                const interpolatedCenter = childCenterPoint.clone().lerp(parentPoint, lerpFactor);
 
-    for (const geometry of geometries) {
-        // Ensure the geometry is indexed and has positions
-        if (!geometry.index || !geometry.attributes.position) {
-            geometry.dispose();
-            continue;
-        }
+                for (let j = 0; j <= radialSegments; j++) {
+                    const vertexIndex = (i * (radialSegments + 1) + j) * 3;
 
-        const positions = geometry.attributes.position.array;
-        const normals = geometry.attributes.normal ? geometry.attributes.normal.array : null;
-        const uvs = geometry.attributes.uv ? geometry.attributes.uv.array : null;
-        const indices = geometry.index.array;
+                    const originalNormal = new THREE.Vector3().fromArray(meshData.normals, vertexIndex);
+                    const targetNormal = targetNormals[j];
 
-        // Iterate over the indices to process each vertex of each face
-        for (let i = 0; i < indices.length; i++) {
-            const index = indices[i];
-            const pIndex = index * 3;
-            const vIndex = index * 2;
+                    // Interpolate the vertex normal.
+                    const newNormal = originalNormal.clone().lerp(targetNormal, lerpFactor).normalize();
+                    newNormal.toArray(meshData.normals, vertexIndex);
 
-            const x = positions[pIndex];
-            const y = positions[pIndex + 1];
-            const z = positions[pIndex + 2];
+                    // Interpolate the branch radius.
+                    const interpolatedRadius = THREE.MathUtils.lerp(actualRadiusAt_i, parentRadius, lerpFactor);
 
-            // Create a quantized key for the vertex position
-            const key = `${Math.round(x * precision)},${Math.round(y * precision)},${Math.round(z * precision)}`;
-
-            if (vertexMap.has(key)) {
-                // A vertex at this position has already been processed.
-                // Reuse its index for the new face.
-                finalIndices.push(vertexMap.get(key));
-            } else {
-                // This is a new, unique vertex.
-                const newIndex = finalPositions.length / 3;
-                finalPositions.push(x, y, z);
-
-                if (normals) {
-                    finalNormals.push(normals[pIndex], normals[pIndex + 1], normals[pIndex + 2]);
+                    // Calculate the new vertex position from the interpolated properties.
+                    const newVertex = interpolatedCenter.clone().add(newNormal.clone().multiplyScalar(interpolatedRadius));
+                    newVertex.toArray(meshData.vertices, vertexIndex);
                 }
-                if (uvs) {
-                    finalUvs.push(uvs[vIndex], uvs[vIndex + 1]);
-                }
-
-                // Store the new index in the map and use it for the face.
-                vertexMap.set(key, newIndex);
-                finalIndices.push(newIndex);
             }
         }
 
-        // Dispose of the original geometry to free up memory
-        geometry.dispose();
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.vertices, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.normals, 3));
+        geometry.setIndex(meshData.indices);
+
+        geometries.push({ geometry: geometry, node: node });
+
+        for (const child of node.children) {
+            _createBranch(child, node);
+        }
     }
 
-    mergedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(finalPositions, 3));
+    _createBranch(structure, null);
+    return geometries;
+}
 
-    if (finalNormals.length > 0) {
-        mergedGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(finalNormals, 3));
+/**
+ * Generates the vertices, normals, and indices for a tapered tube geometry along a curve.
+ * This function encapsulates the core logic of creating the tube mesh.
+ * @param {THREE.Curve} curve - The path of the tube.
+ * @param {number} tubularSegments - The number of segments along the curve.
+ * @param {number} radialSegments - The number of segments around the tube's circumference.
+ * @param {number} startRadius - The radius at the start of the tube.
+ * @param {number} endRadius - The radius at the end of the tube.
+ * @returns {{vertices: number[], normals: number[], indices: number[]}}
+ */
+function generateTubeMesh(curve, tubularSegments, radialSegments, startRadius, endRadius) {
+    // 检查Frenet frames缓存
+    const cacheKey = `${tubularSegments}`;
+    let frames;
+    
+    if (frenetFramesCache.has(curve)) {
+        const cachedFrames = frenetFramesCache.get(curve);
+        if (cachedFrames[cacheKey]) {
+            frames = cachedFrames[cacheKey];
+        } else {
+            frames = curve.computeFrenetFrames(tubularSegments, false);
+            cachedFrames[cacheKey] = frames;
+        }
+    } else {
+        frames = curve.computeFrenetFrames(tubularSegments, false);
+        frenetFramesCache.set(curve, { [cacheKey]: frames });
+    }
+    
+    const { normals: frameNormals, binormals } = frames;
+
+    const vertices = [];
+    const vertexNormals = [];
+    const indices = [];
+
+    for (let i = 0; i <= tubularSegments; i++) {
+        const t = i / tubularSegments;
+        const point = curve.getPointAt(t);
+        const radius = Math.max(0.01, THREE.MathUtils.lerp(startRadius, endRadius, t));
+
+        const normal = frameNormals[i];
+        const binormal = binormals[i];
+
+        for (let j = 0; j <= radialSegments; j++) {
+            const angle = (j / radialSegments) * Math.PI * 2;
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+
+            const vertexNormal = new THREE.Vector3(
+                cos * normal.x + sin * binormal.x,
+                cos * normal.y + sin * binormal.y,
+                cos * normal.z + sin * binormal.z
+            ).normalize();
+            vertexNormals.push(vertexNormal.x, vertexNormal.y, vertexNormal.z);
+
+            const vertex = new THREE.Vector3()
+                .copy(point)
+                .add(vertexNormal.clone().multiplyScalar(radius));
+            vertices.push(vertex.x, vertex.y, vertex.z);
+        }
     }
 
-    if (finalUvs.length > 0) {
-        mergedGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(finalUvs, 2));
+    for (let i = 0; i < tubularSegments; i++) {
+        for (let j = 0; j < radialSegments; j++) {
+            const a = i * (radialSegments + 1) + j;
+            const b = a + 1;
+            const c = (i + 1) * (radialSegments + 1) + j;
+            const d = c + 1;
+            indices.push(a, b, d);
+            indices.push(a, d, c);
+        }
     }
 
-    mergedGeometry.setIndex(finalIndices);
-
-    // IMPORTANT: Recompute normals after welding to smooth the seams.
-    // This averages the normals of faces sharing a now-merged vertex.
-    if (finalNormals.length === 0 && finalPositions.length > 0) {
-        mergedGeometry.computeVertexNormals();
-    }
-
-
-    return mergedGeometry;
+    return { vertices, normals: vertexNormals, indices };
 }

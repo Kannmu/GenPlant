@@ -1,72 +1,135 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import Stats from 'three/examples/jsm/libs/stats.module.js';
+import { RENDERER_CONFIG, PATHS } from './config/constants.js';
+import { scaleAndPositionObject, enableShadows, disposeObject } from './util/geometry.js';
 
-let scene, camera, renderer, controls, plantObject, clock, animationFrameId, ground;
-
-const INITIAL_CAMERA_POSITION = new THREE.Vector3(0, 50, 50);
-const INITIAL_CAMERA_LOOKAT = new THREE.Vector3(0, 0, 0);
+let scene, camera, renderer, controls, plantObject, clock, animationFrameId, ground, stats;
 
 export function init(canvas) {
-    // 1. Scene
+    initScene();
+    initCamera(canvas);
+    initRenderer(canvas);
+    initStats();
+    initLighting();
+    initGround();
+    initControls();
+    
+    clock = new THREE.Clock();
+    document.addEventListener('visibilitychange', handleVisibilityChange, false);
+    animate();
+}
+
+function initScene() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xCDF1AA);
+    scene.background = new THREE.Color(RENDERER_CONFIG.SCENE.BACKGROUND_COLOR);
+    scene.fog = new THREE.Fog(
+        RENDERER_CONFIG.SCENE.BACKGROUND_COLOR,
+        RENDERER_CONFIG.SCENE.FOG_NEAR,
+        RENDERER_CONFIG.SCENE.FOG_FAR
+    );
+}
 
-    // 2. Camera
-    camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-    camera.position.copy(INITIAL_CAMERA_POSITION);
-    camera.lookAt(INITIAL_CAMERA_LOOKAT);
+function initCamera(canvas) {
+    const { CAMERA } = RENDERER_CONFIG;
+    camera = new THREE.PerspectiveCamera(
+        CAMERA.FOV,
+        canvas.clientWidth / canvas.clientHeight,
+        CAMERA.NEAR,
+        CAMERA.FAR
+    );
+    camera.position.copy(CAMERA.INITIAL_POSITION);
+    camera.lookAt(CAMERA.INITIAL_LOOKAT);
+}
 
-    // 3. Renderer
+function initRenderer(canvas) {
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
     renderer.setSize(canvas.clientWidth, canvas.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.5;
+    renderer.toneMappingExposure = RENDERER_CONFIG.RENDERER_SETTINGS.TONE_MAPPING_EXPOSURE;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+}
 
-    // 4. Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+function initStats() {
+    stats = new Stats();
+    document.body.appendChild(stats.dom);
+}
+
+function initLighting() {
+    const { LIGHTING } = RENDERER_CONFIG;
+    
+    // 半球光
+    const hemisphereLight = new THREE.HemisphereLight(
+        LIGHTING.HEMISPHERE_LIGHT.SKY_COLOR,
+        LIGHTING.HEMISPHERE_LIGHT.GROUND_COLOR,
+        LIGHTING.HEMISPHERE_LIGHT.INTENSITY
+    );
+    hemisphereLight.castShadow = true;
+    scene.add(hemisphereLight);
+    
+    // 环境光
+    const ambientLight = new THREE.AmbientLight(
+        LIGHTING.AMBIENT_LIGHT.COLOR,
+        LIGHTING.AMBIENT_LIGHT.INTENSITY
+    );
     scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
-    directionalLight.position.set(10, 20, 10);
+    
+    // 平行光
+    const directionalLight = new THREE.DirectionalLight(
+        LIGHTING.DIRECTIONAL_LIGHT.COLOR,
+        LIGHTING.DIRECTIONAL_LIGHT.INTENSITY
+    );
+    const lightPos = LIGHTING.DIRECTIONAL_LIGHT.POSITION;
+    directionalLight.position.set(lightPos.x, lightPos.y, lightPos.z);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    directionalLight.shadow.camera.top = 30;
-    directionalLight.shadow.camera.bottom = -30;
-    directionalLight.shadow.camera.left = -30;
-    directionalLight.shadow.camera.right = 30;
-    directionalLight.shadow.camera.near = 0.1;
-    directionalLight.shadow.camera.far = 100;
+    
+    // 阴影配置
+    directionalLight.shadow.mapSize.width = LIGHTING.DIRECTIONAL_LIGHT.SHADOW_MAP_SIZE;
+    directionalLight.shadow.mapSize.height = LIGHTING.DIRECTIONAL_LIGHT.SHADOW_MAP_SIZE;
+    
+    const shadowCam = LIGHTING.DIRECTIONAL_LIGHT.SHADOW_CAMERA;
+    directionalLight.shadow.camera.top = shadowCam.TOP;
+    directionalLight.shadow.camera.bottom = shadowCam.BOTTOM;
+    directionalLight.shadow.camera.left = shadowCam.LEFT;
+    directionalLight.shadow.camera.right = shadowCam.RIGHT;
+    directionalLight.shadow.camera.near = shadowCam.NEAR;
+    directionalLight.shadow.camera.far = shadowCam.FAR;
+    
     scene.add(directionalLight);
+}
 
-    // Ground Plane
-    const groundGeometry = new THREE.CylinderGeometry(30, 30, 2, 64);;
-
-    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x99b882 });
+function initGround() {
+    const { GROUND } = RENDERER_CONFIG;
+    const groundGeometry = new THREE.CylinderGeometry(
+        GROUND.RADIUS,
+        GROUND.RADIUS,
+        GROUND.HEIGHT,
+        GROUND.SEGMENTS
+    );
+    const groundMaterial = new THREE.MeshStandardMaterial({ color: GROUND.COLOR });
     ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.position.set(0, GROUND.POSITION_Y, 0);
     ground.receiveShadow = true;
     scene.add(ground);
+}
 
-    // 5. Controls
+function initControls() {
+    const { CONTROLS } = RENDERER_CONFIG;
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.1;
+    controls.dampingFactor = CONTROLS.DAMPING_FACTOR;
     controls.screenSpacePanning = true;
     controls.enablePan = false;
-    controls.minDistance = 10;
-    controls.maxDistance = 500;
-    controls.maxPolarAngle = Math.PI / 2;
+    controls.minDistance = CONTROLS.MIN_DISTANCE;
+    controls.maxDistance = CONTROLS.MAX_DISTANCE;
+    controls.maxPolarAngle = CONTROLS.MAX_POLAR_ANGLE;
     controls.autoRotate = true;
-    controls.autoRotateSpeed = 3;
+    controls.autoRotateSpeed = CONTROLS.AUTO_ROTATE_SPEED;
 
-    clock = new THREE.Clock();
-    document.addEventListener('visibilitychange', handleVisibilityChange, false);
-    // 6. Start rendering loop
-    animate();
 }
 
 function handleVisibilityChange() {
@@ -93,72 +156,43 @@ export function animate() {
     const deltaTime = clock.getDelta();
     controls.update(deltaTime);
     renderer.render(scene, camera);
+    stats.update();
 }
 
 export function add(object) {
     clear();
     plantObject = object;
     if (plantObject) {
-        console.log("Adjusting Model size")
-        // Center and scale the model to fit the camera view
-        const box = new THREE.Box3().setFromObject(plantObject);
-        const center = box.getCenter(new THREE.Vector3());
-        plantObject.position.sub(center);
-
-        const size = box.getSize(new THREE.Vector3());
-        const maxSize = Math.max(size.x, size.y, size.z);
-        
-        // Calculate desired size based on camera parameters for optimal fit
-        const desiredSize = 50;
-        
-        // Avoid division by zero if the model has no size
-        if (maxSize > 0) {
-            const scale = desiredSize / maxSize;
-            plantObject.scale.set(scale, scale, scale);
-        }
-
-        // Update the world matrix to get the new bounding box
-        plantObject.updateMatrixWorld(true);
-        const scaledBox = new THREE.Box3().setFromObject(plantObject);
-        const new_center = scaledBox.getCenter(new THREE.Vector3());
-
-        // Center the object on XZ plane and move its lowest point to y = 1
-        plantObject.position.x -= new_center.x;
-        plantObject.position.y -= (scaledBox.min.y);
-        plantObject.position.z -= new_center.z;
-
-        plantObject.traverse(function (child) {
-            if (child.isMesh) {
-                child.castShadow = true;
-            }
-        });
-        
-        // Move ground to the bottom of plantObject
-        // ground.position.set(0, box.min.y, 0); 
-
+        console.log("Adjusting Model size");
+        scaleAndPositionModel();
+        enableShadowsForPlant();
         scene.add(plantObject);
         controls.target.copy(ground.position);
         reset();
     }
 }
 
+function scaleAndPositionModel() {
+    const { MODEL_SCALING, GROUND } = RENDERER_CONFIG;
+    scaleAndPositionObject(
+        plantObject,
+        MODEL_SCALING.DESIRED_SIZE,
+        GROUND.POSITION_Y,
+        MODEL_SCALING.GROUND_OFFSET
+    );
+}
+
+function enableShadowsForPlant() {
+    enableShadows(plantObject, true, false);
+}
+
 
 export function clear() {
     if (plantObject) {
         scene.remove(plantObject);
-        // Dispose of geometry and material to free up memory
-        if (plantObject.geometry) {
-            plantObject.geometry.dispose();
-        }
-        if (plantObject.material) {
-            if (Array.isArray(plantObject.material)) {
-                plantObject.material.forEach(m => m.dispose());
-            } else {
-                plantObject.material.dispose();
-            }
-        }
+        disposeObject(plantObject);
+        plantObject = null;
     }
-    plantObject = null;
 }
 
 export function reset() {
@@ -168,21 +202,24 @@ export function reset() {
 export function loadDefaultModel() {
     return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
-        loader.load('data/defaultModel/glb/defaultModel.glb', function (glb) {
-            glb.scene.traverse(function (child) {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    if (child.material.map) {
-                        child.material.map.encoding = THREE.sRGBEncoding;
-                    }
-                }
-            });
-            const model = glb.scene;
-            resolve(model);
+        loader.load(PATHS.DEFAULT_MODEL, function (glb) {
+            setupDefaultModelMaterials(glb.scene);
+            resolve(glb.scene);
         }, undefined, function (error) {
             console.error("Error in Loading Default Model:", error);
             reject(error);
         });
+    });
+}
+
+function setupDefaultModelMaterials(scene) {
+    scene.traverse(function (child) {
+        if (child.isMesh) {
+            child.castShadow = true;
+            if (child.material.map) {
+                child.material.map.encoding = THREE.sRGBEncoding;
+            }
+        }
     });
 }
 
