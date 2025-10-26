@@ -2,6 +2,8 @@
 
 🌱 A web-based procedural plant generator that creates unique 3D plant models using deterministic algorithms.
 
+🖥️Demo: <https://kannmu.top/GenPlant/GenPlant/>
+
 [中文文档 / Chinese Documentation](./README_zh.md)
 
 ## ✨ Features
