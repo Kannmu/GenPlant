@@ -1,5 +1,6 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { MATERIAL_CONFIG } from '../config/constants.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /**
  * 材质生成
@@ -14,9 +15,6 @@ import { MATERIAL_CONFIG } from '../config/constants.js';
  * 实现：在 applyMaterial 中按 levelProgress 直接写入真正的插值色到 color attribute。
  */
 
-const baseColor = new THREE.Color(MATERIAL_CONFIG.COLORS.BASE_COLOR);
-const tipColor = new THREE.Color(MATERIAL_CONFIG.COLORS.TIP_COLOR);
-
 // 共享材质实例缓存：按 style 单实例
 let standardMaterial = null;
 let glassMaterial = null;
@@ -25,20 +23,29 @@ export function applyMaterial(parameters, geometries, opts = {}) {
     const plant = new THREE.Group();
     const material = getSharedMaterial(opts.materialStyle || MATERIAL_CONFIG.STYLES.STANDARD);
 
-    const maxLevels = (parameters && parameters.structure && parameters.structure.branching)
-        ? parameters.structure.branching.levels
-        : 1;
-    void maxLevels;
-
+    const branchGeometries = [];
     for (const entry of geometries) {
-        if (entry && entry.geometry) {
-            writeVertexColors(entry.geometry, entry.levelProgress);
-            const mesh = new THREE.Mesh(entry.geometry, material);
-            mesh.castShadow = true;
-            mesh.receiveShadow = false;
-            plant.add(mesh);
-        }
+        if (!entry?.geometry) continue;
+        writeVertexColors(entry.geometry, entry.levelProgress, parameters);
+        branchGeometries.push(entry.geometry);
     }
+
+    const merged = branchGeometries.length === 1
+        ? branchGeometries[0]
+        : mergeGeometries(branchGeometries, false);
+    if (!merged) throw new Error('Failed to merge branch geometries');
+
+    if (branchGeometries.length > 1) {
+        for (const geometry of branchGeometries) geometry.dispose();
+    }
+
+    merged.computeBoundingBox();
+    merged.computeBoundingSphere();
+    const mesh = new THREE.Mesh(merged, material);
+    mesh.name = 'branches';
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+    plant.add(mesh);
     return plant;
 }
 
@@ -46,9 +53,13 @@ export function applyMaterial(parameters, geometries, opts = {}) {
  * 将「按 levelProgress 在 baseColor->tipColor 间插值的真实颜色」写入 color attribute，
  * 使单一共享材质即可表现整株梯度，无需每段独立材质。
  */
-function writeVertexColors(geometry, levelProgress) {
+function writeVertexColors(geometry, levelProgress, parameters) {
     if (!geometry.getAttribute('color')) return;
     const t = THREE.MathUtils.clamp(levelProgress ?? 0, 0, 1);
+    const palette = MATERIAL_CONFIG.PALETTES[parameters?.appearance?.palette]
+        || MATERIAL_CONFIG.PALETTES[0];
+    const baseColor = new THREE.Color(palette.branchBase);
+    const tipColor = new THREE.Color(palette.branchTip);
     const c = new THREE.Color().lerpColors(baseColor, tipColor, t);
     const colorAttr = geometry.attributes.color;
     const count = colorAttr.count;
@@ -87,7 +98,8 @@ function getSharedMaterial(style) {
             color: 0xffffff,
             vertexColors: true,
             roughness: PROPERTIES.BASE_ROUGHNESS,
-            metalness: PROPERTIES.METALNESS
+            metalness: PROPERTIES.METALNESS,
+            flatShading: true
         });
         standardMaterial.userData.shared = true;
     }

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * 几何体相关的工具函数
  * 提供常用的几何计算和操作
  */
 
-import * as THREE from "https://esm.sh/three";
+import * as THREE from "three";
 
 /**
  * 计算模型的边界框信息

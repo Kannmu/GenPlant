@@ -1,5 +1,5 @@
-import { init, randomFloat, randomFloatNormal, randomFloatSurprise, randomInt, choice } from '../util/random.js';
-import * as THREE from "https://esm.sh/three";
+﻿import { init, randomFloat, randomFloatNormal, randomFloatSurprise, randomInt, choice } from '../util/random.js';
+import * as THREE from "three";
 import { PARAMETER_CONFIG } from '../config/constants.js';
 
 /**
@@ -27,7 +27,35 @@ export function createParameters(seed, overrides = {}) {
         archetype: createArchetypeParameters(),
         environment: createEnvironmentParameters(overrides),
         structure: createStructureParameters(overrides),
+        appearance: createAppearanceParameters(seed, overrides),
     };
+}
+
+function createAppearanceParameters(seed, overrides) {
+    const fallbackPalette = hashSeed(seed) % 5;
+    const requestedPalette = Number(overrides.palette);
+    const palette = Number.isFinite(requestedPalette) && requestedPalette >= 0
+        ? Math.min(4, Math.round(requestedPalette))
+        : fallbackPalette;
+
+    return {
+        leafiness: clamp01(overrides.leafiness ?? 0.64),
+        bloom: clamp01(overrides.bloom ?? 0.28),
+        palette
+    };
+}
+
+function clamp01(value) {
+    return Math.min(1, Math.max(0, Number(value) || 0));
+}
+
+function hashSeed(seed) {
+    let x = Number(seed) >>> 0;
+    x ^= x >>> 16;
+    x = Math.imul(x, 0x7feb352d);
+    x ^= x >>> 15;
+    x = Math.imul(x, 0x846ca68b);
+    return (x ^ (x >>> 16)) >>> 0;
 }
 
 function pickOverride(overrides, key, drawFn) {

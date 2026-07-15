@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 
 /**
  * 射线拾取器：从 NDC 坐标向地面或植物发射射线。

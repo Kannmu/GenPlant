@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { GARDEN_CONFIG } from '../config/constants.js';
 import { createPlantInstance } from './PlantInstance.js';
 import { encodeState } from '../core/seed.js';
@@ -16,18 +16,39 @@ import { encodeState } from '../core/seed.js';
  *
  * 注：renderEnv 暂未实现，跳过，直接用一个本地 mulberry32。
  */
-export function createGardenManager({ sceneManager, growthAnimator, selection, toast, onPlantsChanged }) {
+export function createGardenManager({ sceneManager, growthAnimator, selection, toast, onPlantsChanged, createPlant }) {
     const instances = new Map();   // id -> instance
     const undoStack = [];          // { action, payload }
     let restoreQueue = [];          // context-loss 后逐帧重生用
     let processingRestore = false;
     let sessionPrng = makeMulberry32(Math.floor(Math.random() * 1e9) >>> 0);
+    let batchDepth = 0;
+    let pendingChange = false;
 
     const api = {
         get instances() { return instances; },
         size() { return instances.size; },
         get(id) { return instances.get(id) || null; },
         getAll() { return [...instances.values()]; },
+        findOpenPosition(x, z, minDistance = 9) {
+            const occupied = (px, pz) => [...instances.values()].some(instance => {
+                const dx = instance.descriptor.x - px;
+                const dz = instance.descriptor.z - pz;
+                return dx * dx + dz * dz < minDistance * minDistance;
+            });
+            if (!occupied(x, z)) return { x, z };
+            for (let ring = 1; ring <= 8; ring++) {
+                const radius = minDistance * ring;
+                const samples = 8 + ring * 4;
+                for (let i = 0; i < samples; i++) {
+                    const angle = (i / samples) * Math.PI * 2;
+                    const px = x + Math.cos(angle) * radius;
+                    const pz = z + Math.sin(angle) * radius;
+                    if (!occupied(px, pz)) return { x: px, z: pz };
+                }
+            }
+            return { x, z };
+        },
 
         /**
          * 放置一株植物到给定 x,z
@@ -47,22 +68,36 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
             // enableShadows 已经在生成侧？这里再确保一遍
             enableShadowsForPlant(group);
             instances.set(instance.id, instance);
-            growthAnimator.start(instance);
-            pushUndo({ action: 'add', id: instance.id });
-            fireChanged();
+            if (opts.animate === false) {
+                instance.growing = false;
+                instance.growth = 1;
+                instance.group.userData.finalScale = instance.group.scale.x || 1;
+            } else {
+                growthAnimator.start(instance);
+            }
+            if (opts.recordUndo !== false) pushUndo({ action: 'add', id: instance.id });
+            if (opts.notify !== false) fireChanged();
             return instance;
         },
 
         removeById(id, recordUndo = true) {
             const inst = instances.get(id);
             if (!inst) return false;
+            const descriptor = {
+                baseSeed: inst.baseSeed,
+                params: { ...inst.params },
+                materialStyle: inst.materialStyle,
+                x: inst.descriptor.x,
+                z: inst.descriptor.z,
+                rotationY: inst.descriptor.rotationY
+            };
             growthAnimator.stop(inst);
             const obj = sceneManager.removePlant(id);
             if (obj) disposeGroup(obj);
             inst.disposed = true;
             instances.delete(id);
             if (selection.get() === inst) selection.clear();
-            if (recordUndo) pushUndo({ action: 'remove', instance: inst });
+            if (recordUndo) pushUndo({ action: 'remove', descriptor });
             fireChanged();
             return true;
         },
@@ -73,9 +108,17 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
             if (entry.action === 'add') {
                 api.removeById(entry.id, false);
             } else if (entry.action === 'remove') {
-                api.restoreInstance(entry.instance);
+                const d = entry.descriptor;
+                const group = typeof createPlant === 'function'
+                    ? createPlant(d.baseSeed, d.params, d.materialStyle)
+                    : null;
+                if (!group) return false;
+                api.placeAt(group, d.baseSeed, d.params, d.materialStyle, d.x, d.z, {
+                    rotationY: d.rotationY,
+                    recordUndo: false,
+                    animate: false
+                });
             }
-            fireChanged();
             return true;
         },
 
@@ -99,9 +142,10 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
         },
 
         clear() {
-            for (const id of [...instances.keys()]) api.removeById(id, false);
-            undoStack.length = 0;
-            fireChanged();
+            batch(() => {
+                for (const id of [...instances.keys()]) api.removeById(id, false);
+                undoStack.length = 0;
+            });
         },
 
         serialize() {
@@ -122,6 +166,10 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
     };
 
     function fireChanged() {
+        if (batchDepth > 0) {
+            pendingChange = true;
+            return;
+        }
         if (typeof onPlantsChanged === 'function') {
             try { onPlantsChanged(api.size(), api.serialize()); } catch (e) { console.error(e); }
         }
@@ -132,14 +180,27 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
         if (undoStack.length > GARDEN_CONFIG.UNDO_STACK_SIZE) undoStack.shift();
     }
 
+    function batch(work) {
+        batchDepth++;
+        try {
+            work();
+        } finally {
+            batchDepth--;
+            if (batchDepth === 0 && pendingChange) {
+                pendingChange = false;
+                fireChanged();
+            }
+        }
+    }
+
     return api;
 }
 
 function enableShadowsForPlant(group) {
     group.traverse(function (child) {
         if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = false;
+            child.castShadow = !child.isInstancedMesh;
+            child.receiveShadow = child.isInstancedMesh;
         }
     });
 }
@@ -148,7 +209,7 @@ function disposeGroup(group) {
     if (!group) return;
     if (group.userData?.disposed) return;
     group.traverse(function (child) {
-        if (child.geometry && !child.geometry.userData?.disposed) {
+        if (child.geometry && !child.geometry.userData?.shared && !child.geometry.userData?.disposed) {
             child.geometry.dispose();
             child.geometry.userData = child.geometry.userData || {};
             child.geometry.userData.disposed = true;

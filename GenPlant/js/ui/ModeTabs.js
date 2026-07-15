@@ -7,13 +7,17 @@ export function createModeTabs(containerEl, store, onChange) {
         btn.addEventListener('click', () => {
             const mode = btn.getAttribute('data-mode');
             store.setMode(mode);
-            buttons.forEach(b => b.classList.toggle('active', b === btn));
+            reflectMode(mode);
             if (typeof onChange === 'function') onChange(mode);
         });
     });
 
     function reflectMode(mode) {
-        buttons.forEach(b => b.classList.toggle('active', b.getAttribute('data-mode') === mode));
+        buttons.forEach(button => {
+            const active = button.getAttribute('data-mode') === mode;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', String(active));
+        });
     }
 
     return { reflectMode };

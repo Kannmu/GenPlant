@@ -1,9 +1,9 @@
-/**
+﻿/**
  * 全局配置常量管理模块
  * 统一管理所有硬编码的魔法数字和配置参数
  */
 
-import * as THREE from "https://esm.sh/three";
+import * as THREE from "three";
 
 // ==================== 种子 schema ====================
 export const SEED_SCHEMA = {
@@ -18,16 +18,16 @@ export const RENDERER_CONFIG = {
         FOV: 50,
         NEAR: 0.1,
         FAR: 1000,
-        INITIAL_POSITION: new THREE.Vector3(0, 35, 70),
-        INITIAL_LOOKAT: new THREE.Vector3(0, 0, 0)
+        INITIAL_POSITION: new THREE.Vector3(34, 22, 48),
+        INITIAL_LOOKAT: new THREE.Vector3(0, 1, 0)
     },
 
     SCENE: {
         BACKGROUND_TOP: 0xeaf7d4,     // 浅绿高明度顶部
         BACKGROUND_BOTTOM: 0xfffeb9,   // 暖奶油底部
-        FOG_NEAR: 120,
-        FOG_FAR: 360,
-        FOG_COLOR: 0xeaf7d4
+        FOG_NEAR: 95,
+        FOG_FAR: 260,
+        FOG_COLOR: 0xdcebd6
     },
 
     LIGHTING: {
@@ -59,32 +59,32 @@ export const RENDERER_CONFIG = {
     },
 
     GROUND: {
-        RADIUS: 40,
-        HEIGHT: 4,
+        RADIUS: 34,
+        HEIGHT: 2.4,
         SEGMENTS: 96,
         CENTER_COLOR: 0xcfe6b0,
         EDGE_COLOR: 0x9fb87a,
-        POSITION_Y: -16,
-        GLOW_RADIUS: 44,
+        POSITION_Y: -13,
+        GLOW_RADIUS: 38,
         GLOW_COLOR: 0xd4f0b8
     },
 
     CONTROLS: {
         DAMPING_FACTOR: 0.08,
         MIN_DISTANCE: 12,
-        MAX_DISTANCE: 240,
+        MAX_DISTANCE: 420,
         MAX_POLAR_ANGLE: Math.PI / 2 - 0.02,
-        AUTO_ROTATE_SPEED: 0.6,
-        TARGET_LERP: 0.08
+        AUTO_ROTATE_SPEED: 0.36,
+        TARGET_LERP: 0.09
     },
 
     RENDERER_SETTINGS: {
-        TONE_MAPPING_EXPOSURE: 1.15,
-        MAX_PIXEL_RATIO: 2
+        TONE_MAPPING_EXPOSURE: 1.08,
+        MAX_PIXEL_RATIO: 1.75
     },
 
     MODEL_SCALING: {
-        DESIRED_SIZE: 26,
+        DESIRED_SIZE: 28,
         GROUND_OFFSET: 0.4
     }
 };
@@ -97,6 +97,7 @@ export const GENERATOR_CONFIG = {
     },
 
     TREE_STRUCTURE: {
+        MAX_NODES: 720,
         ROOT_LENGTH: {
             BASE: 2,
             MIN_RANDOM: 9,
@@ -212,6 +213,14 @@ export const MATERIAL_CONFIG = {
         TIP_COLOR: 0x9fc77a    // 柔 sage 绿
     },
 
+    PALETTES: [
+        { branchBase: 0x725f43, branchTip: 0x718b55, leafBase: 0x456f4d, leafTip: 0x89a966, bloom: 0xf0d6a0 },
+        { branchBase: 0x655f45, branchTip: 0x66916f, leafBase: 0x3e7b68, leafTip: 0x88b99a, bloom: 0xf2d2b6 },
+        { branchBase: 0x7c6047, branchTip: 0x9b8650, leafBase: 0x88783f, leafTip: 0xc4aa5e, bloom: 0xf4c477 },
+        { branchBase: 0x74554b, branchTip: 0x9c6d5c, leafBase: 0x8d5d54, leafTip: 0xcf7b6c, bloom: 0xf1b7a8 },
+        { branchBase: 0x66556d, branchTip: 0x7f7292, leafBase: 0x655d82, leafTip: 0x9b8bb6, bloom: 0xe2cbe8 }
+    ],
+
     PROPERTIES: {
         BASE_ROUGHNESS: 0.55,
         ROUGHNESS_VARIATION: 0.75,
@@ -237,7 +246,8 @@ export const GARDEN_CONFIG = {
     MAX_RESTORE_PER_FRAME: 2,
     HIGHLIGHT_SCALE: 1.04,
     HIGHLIGHT_EMISSIVE: 0x88aa66,
-    PLACEMENT_HEIGHT_BIAS: 0.0
+    PLACEMENT_HEIGHT_BIAS: 0.0,
+    WIND_LEVELS: [0, 0.35, 0.72]
 };
 
 // ==================== UI 配置 ====================

@@ -1,5 +1,4 @@
 import { SLIDERS } from '../state/defaults.js';
-import { debounce } from '../util/dom.js';
 
 /**
  * 滑块组件：依据 SLIDERS 元数据生成滑块，双向绑定 store.params
@@ -9,7 +8,7 @@ import { debounce } from '../util/dom.js';
  * - onChange 用 onChange 来回调上层「预览重生」以防拖动期间每像素重生。
  *   上层自身用 debounce 包 onChange 即可，这里只透传。
  */
-export function createSliders(containerEl, store, onChange) {
+export function createSliders(containerEl, store, onChange, onCommit) {
     containerEl.innerHTML = '';
     const valueEls = {};
     const sliderEls = {};
@@ -45,6 +44,9 @@ export function createSliders(containerEl, store, onChange) {
             val.textContent = formatValue(input.value);
             store.patchParams({ [meta.key]: Number(input.value) });
             if (typeof onChange === 'function') onChange(meta.key);
+        });
+        input.addEventListener('change', () => {
+            if (typeof onCommit === 'function') onCommit(meta.key);
         });
 
         item.appendChild(label);

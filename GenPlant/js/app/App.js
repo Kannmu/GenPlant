@@ -1,13 +1,17 @@
-import * as THREE from "https://esm.sh/three";
-import { GLTFExporter } from 'https://esm.sh/three/examples/jsm/exporters/GLTFExporter.js';
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 import { createStore } from '../core/store.js';
 import { encodeState, decodeState } from '../core/seed.js';
-import { randomBaseSeed } from '../state/defaults.js';
+import { randomBaseSeed, SLIDERS } from '../state/defaults.js';
+import { createTemplateLibrary } from '../state/templates.js';
 import { writePlantSeedToURL, writeGardenToURL, saveGarden, loadGarden, readFromURL } from '../state/persistence.js';
 import { debounce, copyToClipboard } from '../util/dom.js';
-import { GENERATOR_CONFIG, GARDEN_CONFIG } from '../config/constants.js';
+import { GARDEN_CONFIG } from '../config/constants.js';
 import { generate } from '../generator/index.js';
+import { createPlantFactory } from '../generator/PlantFactory.js';
+import { disposeSharedMaterials } from '../generator/material.js';
+import { disposeFoliageResources } from '../generator/foliage.js';
 import { createEngine } from '../three/Engine.js';
 import { createUIController } from '../ui/UIController.js';
 import { createPointerSystem } from '../interaction/PointerSystem.js';
@@ -18,175 +22,331 @@ import { createGardenManager } from '../garden/GardenManager.js';
 import { createGardenController } from '../interaction/GardenController.js';
 import { createCreatorController } from '../interaction/CreatorController.js';
 import { createModeManager } from './ModeManager.js';
-import { disposeSharedMaterials } from '../generator/material.js';
 
-/**
- * App：组装一切。init 顺序：store -> engine -> pickers/anim -> manager ->
- *   controllers -> 再把 actions 填给 UIController -> UIController -> modeManager -> 初始花园 -> start。
- */
 export function createApp() {
-    // ---- 读 URL 初始状态 ----
     const urlState = readFromURL();
     let initialBaseSeed = randomBaseSeed();
     let initialParams = null;
     if (urlState.plantSeed) {
-        try {
-            const dec = decodeState(urlState.plantSeed);
-            initialBaseSeed = dec.baseSeed;
-            initialParams = dec.params;
-        } catch (e) { /* keep defaults */ }
+        const decoded = decodeState(urlState.plantSeed);
+        initialBaseSeed = decoded.baseSeed;
+        initialParams = decoded.params;
     }
 
+    const initialGarden = (urlState.garden?.length ? urlState.garden : loadGarden()) || [];
     const store = createStore({
         mode: 'creator',
         baseSeed: initialBaseSeed,
         params: initialParams || undefined
     });
+    const templateLibrary = createTemplateLibrary();
+    templateLibrary.importSeeds(initialGarden);
 
     const canvas = document.getElementById('three-canvas');
     if (!canvas) throw new Error('canvas #three-canvas not found');
 
     const engine = createEngine(canvas);
     const { sceneManager, cameraRig } = engine;
-
     const picker = createRaycastPicker(cameraRig.camera);
     const selection = createSelection();
     const growthAnimator = createGrowthAnimator();
     engine.addUpdater(growthAnimator.update);
     engine.addUpdater(selection.update);
 
-    // ---- 工具/依赖需要在 UIController 之前就存在（toast） ----
-    // 先建一个临时 toast stub，再由 UIController 替换实现 —— 但 GardenManager 需要 toast.show。
-    // 为简单：先建 UIController 时 actions 用一个临时对象，事后回填。
     const pendingActions = {};
     const ui = createUIController(store, pendingActions);
-
+    const plantFactory = createPlantFactory();
     const gardenManager = createGardenManager({
-        sceneManager, growthAnimator, selection, toast: ui.toast,
+        sceneManager,
+        growthAnimator,
+        selection,
+        toast: ui.toast,
+        createPlant: (baseSeed, params, style) => plantFactory.create(baseSeed, params, style),
         onPlantsChanged: (size, garden) => {
             ui.setUndoEnabled(gardenManager.canUndo());
             ui.setDeleteEnabled(!!selection.get());
+            ui.setGardenCount(size);
             writeGardenToURL(garden);
             saveGarden(garden);
         }
     });
-
-    const gardenController = createGardenController({
-        store, sceneManager, gardenManager, selection, cameraRig, picker,
-        toast: ui.toast,
-        getAnchorSeed: () => store.getState().baseSeed
+    let diagnosticsElapsed = 0;
+    const removeDiagnosticsUpdater = engine.addUpdater(dt => {
+        diagnosticsElapsed += dt;
+        if (diagnosticsElapsed < 0.5) return;
+        diagnosticsElapsed = 0;
+        const stats = engine.getStats();
+        canvas.dataset.renderCalls = String(stats.calls);
+        canvas.dataset.triangles = String(stats.triangles);
+        canvas.dataset.geometries = String(stats.geometries);
+        canvas.dataset.plants = String(gardenManager.size());
+        if (gardenManager.size() > 0) {
+            const bounds = new THREE.Box3().setFromObject(sceneManager.gardenRoot);
+            const size = bounds.getSize(new THREE.Vector3());
+            canvas.dataset.gardenSize = `${size.x.toFixed(1)},${size.y.toFixed(1)},${size.z.toFixed(1)}`;
+        }
+        canvas.dataset.cameraDistance = cameraRig.camera.position.distanceTo(cameraRig.controls.target).toFixed(1);
     });
 
     const creatorController = createCreatorController({ sceneManager, cameraRig });
-
+    const gardenController = createGardenController({
+        store,
+        sceneManager,
+        gardenManager,
+        selection,
+        picker,
+        toast: ui.toast,
+        getPlacementDescriptor: () => templateLibrary.resolve(templateLibrary.getActive()),
+        createPlant: (baseSeed, params, style) => plantFactory.create(baseSeed, params, style)
+    });
     const pointerSystem = createPointerSystem(canvas);
 
-    // ---- 预览重生成 ----
-    const regenPreviewDebounced = debounce(() => {
-        const st = store.getState();
-        creatorController.regeneratePreview(st.baseSeed, st.params, { previewQuality: false });
-    }, 90);
+    const moods = [
+        { key: 'morning', label: '晨光' },
+        { key: 'day', label: '晴昼' },
+        { key: 'evening', label: '夕照' }
+    ];
+    const winds = [
+        { value: GARDEN_CONFIG.WIND_LEVELS[0], label: '静止' },
+        { value: GARDEN_CONFIG.WIND_LEVELS[1], label: '微风' },
+        { value: GARDEN_CONFIG.WIND_LEVELS[2], label: '清风' }
+    ];
+    let moodIndex = 0;
+    let windIndex = 1;
+    let editingTemplateId = null;
+    let creatorView = null;
+    let gardenView = null;
+    let hasActivatedCreator = false;
+    let hasActivatedGarden = false;
 
-    function regenPreviewNow(materialStyle) {
-        const st = store.getState();
-        creatorController.regeneratePreview(st.baseSeed, st.params, {
-            previewQuality: false,
-            materialStyle: materialStyle
-        });
+    const regenPreviewDebounced = debounce(() => {
+        const state = store.getState();
+        creatorController.regeneratePreview(state.baseSeed, state.params, { previewQuality: true });
+    }, 72);
+
+    function regenPreviewNow() {
+        const state = store.getState();
+        creatorController.regeneratePreview(state.baseSeed, state.params, { previewQuality: false });
     }
 
-    // ---- 模式切换 ----
-    function refocusGarden() {
-        const c = gardenCentroid(gardenManager.getAll());
-        cameraRig.setTarget(c);
+    function frameGarden() {
+        if (gardenManager.size() === 0) {
+            cameraRig.reset();
+            return;
+        }
+        cameraRig.frameObject(
+            sceneManager.gardenRoot,
+            window.innerWidth < 600 ? 1.95 : 1.7,
+            window.innerWidth < 600 ? 150 : 220
+        );
     }
 
     const modeManager = createModeManager({
         store,
-        onActivateGarden: (active) => {
-            if (active) {
-                creatorController.clearPreview();
-                pointerSystem.setTapHandler((x, y) => gardenController.onPointerTap(x, y));
-                cameraRig.setAutoRotate(false);
-                refocusGarden();
-            } else {
+        onActivateGarden(active) {
+            if (!active) {
+                if (hasActivatedGarden) gardenView = cameraRig.getView();
                 pointerSystem.setTapHandler(null);
+                return;
             }
+            hasActivatedGarden = true;
+            sceneManager.setMode('garden');
+            gardenController.clearSelection();
+            pointerSystem.setTapHandler((x, y) => gardenController.onPointerTap(x, y));
+            cameraRig.setAutoRotate(false);
+            if (!cameraRig.setView(gardenView)) frameGarden();
         },
-        onActivateCreator: (active) => {
-            if (active) {
-                selection.clear();
+        onActivateCreator(active) {
+            if (!active) {
+                if (hasActivatedCreator) creatorView = cameraRig.getView();
                 pointerSystem.setTapHandler(null);
-                regenPreviewNow('standard');
-                cameraRig.setAutoRotate(true);
-                cameraRig.setTarget(new THREE.Vector3(0, sceneManager.groundSurface.position.y, 0));
-            } else {
                 cameraRig.setAutoRotate(false);
+                return;
             }
+            hasActivatedCreator = true;
+            sceneManager.setMode('creator');
+            gardenController.clearSelection();
+            pointerSystem.setTapHandler(() => creatorController.wake());
+            if (!creatorController.getDescriptor()) regenPreviewNow();
+            cameraRig.setAutoRotate(true);
+            if (!cameraRig.setView(creatorView)) creatorController.focus();
         }
     });
 
-    // ---- 现在回填 actions 给 UIController ----
-    function onGenerateGardenPlace() {
-        const st = store.getState();
-        const c = gardenCentroid(gardenManager.getAll());
-        const prng = makeMulberry32(st.baseSeed >>> 0);
-        const offsetR = 6 + prng() * 12;
-        const ang = prng() * Math.PI * 2;
-        const group = generatePlantSafe(st.baseSeed, st.params);
-        if (!group) { ui.toast.show('生成失败'); return; }
-        gardenManager.placeAt(group, st.baseSeed, st.params, 'standard',
-            c.x + Math.cos(ang) * offsetR, c.z + Math.sin(ang) * offsetR);
-        refocusGarden();
+    function syncTemplateUI() {
+        const templates = templateLibrary.list();
+        const active = templateLibrary.getActive();
+        ui.renderTemplates(templates, active?.id || null);
+        const activeIndex = active ? templates.findIndex(template => template.id === active.id) : -1;
+        ui.setActiveTemplate(active ? {
+            ...active,
+            specimen: `ARCHIVE ${String(activeIndex + 1).padStart(3, '0')}`
+        } : null);
+        ui.setGardenPlaceEnabled(!!active);
+        const descriptor = templateLibrary.resolve(active);
+        if (descriptor) {
+            const schedule = window.requestIdleCallback || (callback => setTimeout(callback, 0));
+            schedule(() => plantFactory.warm(descriptor.baseSeed, descriptor.params, descriptor.materialStyle));
+        }
     }
 
-    function exportCurrent() {
-        const sel = selection.get();
-        const preview = sceneManager.getPreview();
-        const targetGroup = sel ? sel.group : preview;
-        if (!targetGroup) { ui.toast.show('没有可导出的植物'); return; }
-        doExport(targetGroup, `genplant_${store.getState().baseSeed}`);
+    const unsubscribeTemplates = templateLibrary.subscribe(syncTemplateUI);
+    syncTemplateUI();
+
+    for (const entry of initialGarden) {
+        const decoded = decodeState(entry.seed);
+        const group = plantFactory.create(decoded.baseSeed, decoded.params, 'standard');
+        if (!group) continue;
+        gardenManager.placeAt(group, decoded.baseSeed, decoded.params, 'standard', entry.x, entry.z, {
+            rotationY: entry.rotationY,
+            recordUndo: false,
+            animate: false,
+            notify: false
+        });
+    }
+    ui.setGardenCount(gardenManager.size());
+
+    function clearEditingTemplate() {
+        editingTemplateId = null;
+        ui.setEditingTemplate(null);
+    }
+
+    function mutateCurrent() {
+        const state = store.getState();
+        const nextSeed = ((Math.imul(state.baseSeed >>> 0, 1664525) + 1013904223) >>> 0) || 1;
+        const random = makeMulberry32(nextSeed);
+        const candidates = SLIDERS.filter(meta => !['levels', 'branchesPerSplitMin', 'branchesPerSplitMax', 'palette'].includes(meta.key));
+        const patch = {};
+        for (let i = 0; i < 3; i++) {
+            const meta = candidates[Math.floor(random() * candidates.length)];
+            const current = Number(state.params[meta.key]);
+            const delta = (random() - 0.5) * (meta.max - meta.min) * 0.18;
+            patch[meta.key] = THREE.MathUtils.clamp(current + delta, meta.min, meta.max);
+        }
+        store.setBaseSeed(nextSeed);
+        store.patchParams(patch);
     }
 
     async function shareCurrent() {
-        const st = store.getState();
-        const str = encodeState({ baseSeed: st.baseSeed, params: st.params });
-        const ok = await copyToClipboard(str + '  ' + window.location.origin + window.location.pathname + '#s=' + str);
+        const state = store.getState();
+        const descriptor = state.mode === 'garden'
+            ? templateLibrary.resolve(templateLibrary.getActive())
+            : { baseSeed: state.baseSeed, params: state.params };
+        if (!descriptor) {
+            ui.toast.show('植物库中还没有模板');
+            return;
+        }
+        const seed = encodeState(descriptor);
+        const url = `${window.location.origin}${window.location.pathname}#s=${seed}`;
+        const ok = await copyToClipboard(`${seed}  ${url}`);
         ui.toast.show(ok ? '分享链接已复制' : '复制失败，请手动复制种子');
     }
 
-    // 全部 actions
+    function exportCurrent() {
+        const selected = selection.get();
+        const preview = sceneManager.getPreview();
+        const target = store.getState().mode === 'garden' ? selected?.group : preview;
+        if (!target) {
+            ui.toast.show(store.getState().mode === 'garden' ? '请先选择一株植物' : '没有可导出的植物');
+            return;
+        }
+        doExport(target, `genplant_${store.getState().baseSeed}`);
+    }
+
     const actions = {
-        onSeedChange(_str) {
-            if (store.getState().mode === 'creator') regenPreviewNow('standard');
+        onSeedChange() {
+            clearEditingTemplate();
+            if (store.getState().mode === 'creator') regenPreviewNow();
         },
         onRandomSeed() {
+            clearEditingTemplate();
             store.setBaseSeed(randomBaseSeed());
-            ui.syncSeedInputFromState();
-            if (store.getState().mode === 'creator') regenPreviewNow('standard');
-            else refocusGarden();
-            ui.toast.show('新种子', 1000);
+            regenPreviewNow();
+            ui.toast.show('新的造物草稿', 1000);
+        },
+        onMutate() {
+            clearEditingTemplate();
+            mutateCurrent();
+            regenPreviewNow();
+            ui.toast.show('已生成一个变体', 1100);
+        },
+        onSaveTemplate() {
+            const state = store.getState();
+            const wasEditing = !!editingTemplateId;
+            const template = templateLibrary.save(state, editingTemplateId);
+            editingTemplateId = template.id;
+            ui.setEditingTemplate(template.id);
+            ui.toast.show(wasEditing ? '模板已更新' : '模板已保存', 1100);
         },
         onGenerate() {
-            if (store.getState().mode === 'creator') regenPreviewNow('standard');
-            else onGenerateGardenPlace();
-        },
-        onPlantInGarden() {
-            const desc = creatorController.getDescriptor();
-            if (!desc) { ui.toast.show('请先用滑块生成一株'); return; }
+            const started = performance.now();
+            const descriptor = templateLibrary.resolve(templateLibrary.getActive());
+            if (!descriptor) {
+                ui.toast.show('请先从植物库选择一个模板');
+                return;
+            }
             const target = cameraRig.getTarget();
-            const group = generatePlantSafe(desc.baseSeed, desc.params);
-            if (!group) { ui.toast.show('生成失败'); return; }
-            gardenManager.placeAt(group, desc.baseSeed, desc.params, desc.materialStyle, target.x, target.z);
-            ui.toast.show('已种入花园', 1300);
+            const position = gardenManager.findOpenPosition(target.x, target.z);
+            if (gardenController.placeAt(position.x, position.z)) {
+                canvas.dataset.lastPlacementMs = (performance.now() - started).toFixed(1);
+                ui.toast.show('已放置', 800);
+            }
+        },
+        onSelectTemplate(id) {
+            const template = templateLibrary.select(id);
+            if (template) ui.toast.show(`已选择 ${template.name}`, 800);
+        },
+        onEditTemplate(id) {
+            const descriptor = templateLibrary.resolve(id);
+            if (!descriptor) return;
+            editingTemplateId = id;
+            ui.setEditingTemplate(id);
+            store.replaceAll({ baseSeed: descriptor.baseSeed, params: descriptor.params, mode: 'creator' });
+            regenPreviewNow();
+            modeManager.activate('creator');
+            ui.reflectMode('creator');
+        },
+        onDeleteTemplate(id) {
+            const template = templateLibrary.get(id);
+            if (!template) return;
+            templateLibrary.remove(id);
+            if (editingTemplateId === id) clearEditingTemplate();
+            ui.toast.show(`${template.name} 已从植物库移除`, 1100);
         },
         onUndo() { gardenController.onUndo(); },
         onDelete() { gardenController.onDelete(); },
-        onClear() { gardenController.onClear(); ui.toast.show('花园已清空', 1200); },
-        onResetCamera() { cameraRig.reset(); refocusGarden(); },
+        onClear() {
+            gardenController.onClear();
+            ui.toast.show('花园已清空', 1000);
+        },
+        onResetCamera() {
+            if (store.getState().mode === 'creator') {
+                creatorView = null;
+                creatorController.focus();
+            } else {
+                gardenView = null;
+                frameGarden();
+            }
+        },
         onExport() { exportCurrent(); },
         onShare() { shareCurrent(); },
         onParamsLiveChange() { regenPreviewDebounced(); },
+        onParamsCommit() {
+            regenPreviewDebounced.cancel();
+            if (store.getState().mode === 'creator') regenPreviewNow();
+        },
+        onMoodChange() {
+            moodIndex = (moodIndex + 1) % moods.length;
+            const mood = moods[moodIndex];
+            sceneManager.setEnvironment({ mood: mood.key });
+            return mood;
+        },
+        onWindChange() {
+            windIndex = (windIndex + 1) % winds.length;
+            const wind = winds[windIndex];
+            sceneManager.setEnvironment({ wind: wind.value });
+            return wind;
+        },
         onModeChange(mode) {
             modeManager.activate(mode);
             ui.reflectMode(mode);
@@ -194,104 +354,91 @@ export function createApp() {
     };
     Object.assign(pendingActions, actions);
 
-    // ---- store 订阅：单植物 seed -> URL ----
-    const urlDebounced = debounce(() => {
-        const st = store.getState();
-        writePlantSeedToURL(encodeState({ baseSeed: st.baseSeed, params: st.params }));
-    }, 250);
-    store.subscribe(() => urlDebounced());
+    sceneManager.setEnvironment({ mood: moods[moodIndex].key, wind: winds[windIndex].value });
+    ui.setMoodState(moods[moodIndex]);
+    ui.setWindState(winds[windIndex]);
+    ui.setEditingTemplate(null);
 
-    // ---- context-loss 恢复：逐帧重生 ----
-    engine.onContextRestored = function () {
+    const writeURLDebounced = debounce(() => {
+        const state = store.getState();
+        writePlantSeedToURL(encodeState({ baseSeed: state.baseSeed, params: state.params }));
+    }, 250);
+    const unsubscribeStore = store.subscribe(() => writeURLDebounced());
+
+    engine.onContextRestored = function onContextRestored() {
         const snapshot = gardenManager.serialize();
         gardenManager.clear();
-        let idx = 0;
+        let index = 0;
         function rebuildBatch() {
-            const N = GARDEN_CONFIG.MAX_RESTORE_PER_FRAME;
-            for (let i = 0; i < N && idx < snapshot.length; i++, idx++) {
-                const p = snapshot[idx];
-                const dec = decodeState(p.seed);
-                const group = generatePlantSafe(dec.baseSeed, dec.params);
+            for (let i = 0; i < GARDEN_CONFIG.MAX_RESTORE_PER_FRAME && index < snapshot.length; i++, index++) {
+                const entry = snapshot[index];
+                const decoded = decodeState(entry.seed);
+                const group = plantFactory.create(decoded.baseSeed, decoded.params, 'standard');
                 if (!group) continue;
-                gardenManager.placeAt(group, dec.baseSeed, dec.params, 'standard',
-                    p.x, p.z, { rotationY: p.rotationY });
+                gardenManager.placeAt(group, decoded.baseSeed, decoded.params, 'standard', entry.x, entry.z, {
+                    rotationY: entry.rotationY,
+                    recordUndo: false,
+                    animate: false,
+                    notify: false
+                });
             }
-            if (idx < snapshot.length) requestAnimationFrame(rebuildBatch);
+            if (index < snapshot.length) requestAnimationFrame(rebuildBatch);
             else {
-                refocusGarden();
-                if (store.getState().mode === 'creator') regenPreviewNow('standard');
+                gardenManager.fireChanged();
+                if (store.getState().mode === 'creator') regenPreviewNow();
             }
         }
         rebuildBatch();
-        ui.toast.show('已从上下文丢失恢复', 1800);
+        ui.toast.show('场景已恢复', 1500);
     };
 
-    // ---- 初始花园：localStorage / URL ----
-    const persisted = loadGarden() || [];
-    const initialGarden = (urlState.garden && urlState.garden.length) ? urlState.garden : persisted;
-    if (initialGarden && initialGarden.length) {
-        for (const p of initialGarden) {
-            try {
-                const dec = decodeState(p.seed);
-                const group = generatePlantSafe(dec.baseSeed, dec.params);
-                if (group) gardenManager.placeAt(group, dec.baseSeed, dec.params, 'standard',
-                    p.x, p.z, { rotationY: p.rotationY });
-            } catch (e) { console.warn('initial garden entry skipped:', e); }
-        }
-    }
-
-    // ---- 启动 ----
     ui.reflectMode(store.getState().mode);
     engine.start();
-    regenPreviewNow('standard');
 
-    // 若 urlState 带植物 seed 且此时在造物模式 → 已通过 regenPreviewNow 体现；若花园非空则切到花园模式更友好
-    if (gardenManager.size() > 0 && !urlState.plantSeed) {
-        // 保留 creator，但聚焦花园质心
-    }
-
-    return { engine, store, ui, dispose };
+    const api = {
+        engine,
+        store,
+        ui,
+        templateLibrary,
+        gardenManager,
+        getStats() {
+            return { ...engine.getStats(), plants: gardenManager.size(), templates: templateLibrary.list().length };
+        },
+        dispose
+    };
+    return api;
 
     function dispose() {
+        regenPreviewDebounced.cancel();
+        writeURLDebounced.cancel();
+        unsubscribeTemplates();
+        unsubscribeStore();
+        removeDiagnosticsUpdater();
         pointerSystem.dispose();
+        gardenManager.dispose();
         engine.dispose();
-        disposeSharedMaterialsSafe();
+        disposeFoliageResources();
+        plantFactory.dispose();
+        disposeSharedMaterials();
     }
 }
 
-// ---- helpers ----
-
-function disposeSharedMaterialsSafe() {
-    try { disposeSharedMaterials(); } catch (e) {}
-}
-
-function gardenCentroid(instances) {
-    const c = new THREE.Vector3();
-    if (!instances || instances.length === 0) { c.set(0, 0, 0); return c; }
-    for (const inst of instances) {
-        const p = new THREE.Vector3();
-        inst.group.getWorldPosition(p);
-        c.add(p);
-    }
-    c.multiplyScalar(1 / instances.length);
-    return c;
-}
-
-function generatePlantSafe(baseSeed, params) {
+function generatePlantSafe(baseSeed, params, materialStyle = 'standard') {
     try {
-        return generate(baseSeed, params, { materialStyle: 'standard' });
-    } catch (err) {
-        console.error('generatePlantSafe failed:', err);
+        return generate(baseSeed, params, { materialStyle });
+    } catch (error) {
+        console.error('Plant generation failed:', error);
         return null;
     }
 }
 
-function makeMulberry32(a) {
-    return function () {
-        a |= 0; a = a + 0x6D2B79F5 | 0;
-        let t = Math.imul(a ^ a >>> 15, 1 | a);
-        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+function makeMulberry32(seed) {
+    return function random() {
+        seed |= 0;
+        seed = seed + 0x6D2B79F5 | 0;
+        let value = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
+        return ((value ^ value >>> 14) >>> 0) / 4294967296;
     };
 }
 
@@ -299,31 +446,24 @@ function doExport(object, fileBase) {
     const exporter = new GLTFExporter();
     exporter.parse(
         object,
-        function (result) {
-            if (result instanceof ArrayBuffer) {
-                saveArrayBuffer(result, fileBase + '.glb');
-            } else {
-                saveString(JSON.stringify(result, null, 2), fileBase + '.gltf');
-            }
+        result => {
+            const blob = result instanceof ArrayBuffer
+                ? new Blob([result], { type: 'application/octet-stream' })
+                : new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+            saveBlob(blob, `${fileBase}.${result instanceof ArrayBuffer ? 'glb' : 'gltf'}`);
         },
-        function (error) { console.error('export failed', error); },
+        error => console.error('export failed', error),
         { binary: true, onlyVisible: true, truncateDrawRange: true }
     );
 }
 
-function saveString(text, filename) {
-    save(new Blob([text], { type: 'text/plain' }), filename);
-}
-function saveArrayBuffer(buffer, filename) {
-    save(new Blob([buffer], { type: 'application/octet-stream' }), filename);
-}
-function save(blob, filename) {
+function saveBlob(blob, filename) {
     const link = document.createElement('a');
     link.style.display = 'none';
-    document.body.appendChild(link);
     link.href = URL.createObjectURL(blob);
     link.download = filename;
+    document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
     URL.revokeObjectURL(link.href);
 }

@@ -1,9 +1,10 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 
 import {createParameters} from './parameters.js'
 import {createStructure} from './structure.js'
 import {createGeometry} from './geometry.js'
 import {applyMaterial} from './material.js'
+import { createFoliage } from './foliage.js';
 
 
 /**
@@ -51,6 +52,9 @@ export function generate(seed, overrides = {}, opts = {}) {
         if (!plant || !(plant instanceof THREE.Group)) {
             throw new Error('Failed to apply materials');
         }
+        createFoliage(parameters, structure, plant, opts);
+        plant.userData.seed = numSeed;
+        plant.userData.windPhase = ((numSeed % 997) / 997) * Math.PI * 2;
 
         return plant;
 

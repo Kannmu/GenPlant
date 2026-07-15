@@ -4,7 +4,7 @@
  * - 不持有 three.js 强引用，行为通过 App 注入的回调完成
  */
 export function createModeManager({ store, onActivateGarden, onActivateCreator, getCurrentMode }) {
-    let current = store.getState().mode;
+    let current = null;
 
     function activate(mode) {
         if (mode === current) return;
@@ -19,7 +19,7 @@ export function createModeManager({ store, onActivateGarden, onActivateCreator, 
     }
 
     // 初始激活一次
-    activate(current);
+    activate(store.getState().mode);
 
     return {
         activate,

@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { RENDERER_CONFIG } from '../config/constants.js';
 
 /**
@@ -53,7 +53,7 @@ export function createGround() {
     });
     surfaceMaterial.userData = { shared: true };
     const surface = new THREE.Mesh(surfaceGeometry, surfaceMaterial);
-    surface.position.set(0, GROUND.POSITION_Y - GROUND.HEIGHT / 2 + 0.02, 0);
+    surface.position.set(0, GROUND.POSITION_Y + GROUND.HEIGHT / 2 + 0.02, 0);
     surface.receiveShadow = true;
     surface.visible = true;
     surface.userData.raycastSurface = true;

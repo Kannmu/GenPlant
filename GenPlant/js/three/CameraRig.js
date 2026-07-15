@@ -1,5 +1,5 @@
-import * as THREE from "https://esm.sh/three";
-import { OrbitControls } from 'https://esm.sh/three/examples/jsm/controls/OrbitControls.js';
+﻿import * as THREE from "three";
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RENDERER_CONFIG } from '../config/constants.js';
 
 /**
@@ -59,6 +59,41 @@ export function createCameraRig(canvas, cameraTarget) {
         },
         getTarget() {
             return desiredTarget.clone();
+        },
+        getView() {
+            return {
+                position: camera.position.clone(),
+                target: desiredTarget.clone()
+            };
+        },
+        setView(view) {
+            if (!view?.position || !view?.target) return false;
+            camera.position.copy(view.position);
+            desiredTarget.copy(view.target);
+            controls.target.copy(view.target);
+            controls.update();
+            return true;
+        },
+        frameObject(object, padding = 1.35, maxDistance = CONTROLS.MAX_DISTANCE) {
+            if (!object) return;
+            const box = new THREE.Box3().setFromObject(object);
+            if (box.isEmpty()) return;
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+            const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(camera.aspect, 0.1));
+            const verticalDistance = size.y / (2 * Math.tan(verticalFov / 2));
+            const horizontalDistance = size.x / (2 * Math.tan(horizontalFov / 2));
+            const depthDistance = size.z * 1.25;
+            const fitDistance = Math.max(verticalDistance, horizontalDistance, depthDistance, 1) * padding;
+            const distance = THREE.MathUtils.clamp(fitDistance, CONTROLS.MIN_DISTANCE, Math.min(maxDistance, CONTROLS.MAX_DISTANCE));
+            const direction = camera.position.clone().sub(controls.target).normalize();
+            if (direction.lengthSq() < 0.5) direction.set(0.55, 0.35, 0.75).normalize();
+            if (window.innerWidth < 600) direction.set(0.08, 0.28, 0.96).normalize();
+            desiredTarget.copy(center);
+            controls.target.copy(center);
+            camera.position.copy(center).add(direction.multiplyScalar(distance));
+            controls.update();
         },
         update(dt) {
             if (controls.enabled) {

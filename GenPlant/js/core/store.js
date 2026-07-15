@@ -36,8 +36,8 @@ export function createStore(initial = {}) {
     };
     // 仅应用显式且合法的覆盖键
     if (initial.mode === 'creator' || initial.mode === 'garden') state.mode = initial.mode;
-    if (initial.baseSeed !== undefined && !isNaN(Number(initial.baseSeed))) {
-        state.baseSeed = Number(initial.baseSeed);
+    if (initial.baseSeed !== undefined) {
+        state.baseSeed = sanitizeSeed(initial.baseSeed);
     }
     if (Array.isArray(initial.garden)) state.garden = initial.garden;
 
@@ -77,14 +77,7 @@ export function createStore(initial = {}) {
     }
 
     function setBaseSeed(seed) {
-        let num = Number(seed);
-        if (isNaN(num) || num < GENERATOR_CONFIG.SEED.MIN_VALUE) {
-            num = GENERATOR_CONFIG.SEED.MIN_VALUE;
-        } else if (num > GENERATOR_CONFIG.SEED.MAX_VALUE) {
-            num = GENERATOR_CONFIG.SEED.MAX_VALUE;
-        }
-        num = Math.floor(clamp(num, GENERATOR_CONFIG.SEED.MIN_VALUE, GENERATOR_CONFIG.SEED.MAX_VALUE));
-        state.baseSeed = num;
+        state.baseSeed = sanitizeSeed(seed);
         notify();
         return state;
     }
@@ -131,7 +124,7 @@ export function createStore(initial = {}) {
     function replaceAll({ baseSeed, params, mode, garden }) {
         let changed = false;
         if (baseSeed !== undefined) {
-            state.baseSeed = Number(baseSeed) || state.baseSeed;
+            state.baseSeed = sanitizeSeed(baseSeed);
             changed = true;
         }
         if (params && typeof params === 'object') {
@@ -158,6 +151,12 @@ export function createStore(initial = {}) {
             }
         }
         return out;
+    }
+
+    function sanitizeSeed(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return GENERATOR_CONFIG.SEED.MIN_VALUE;
+        return Math.floor(clamp(number, GENERATOR_CONFIG.SEED.MIN_VALUE, GENERATOR_CONFIG.SEED.MAX_VALUE));
     }
 
     return {

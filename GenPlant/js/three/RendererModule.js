@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { RENDERER_CONFIG } from '../config/constants.js';
 
 /**
@@ -16,12 +16,16 @@ export function createRendererModule(canvas) {
         powerPreference: 'high-performance'
     });
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, RENDERER_SETTINGS.MAX_PIXEL_RATIO));
+    const deviceLimit = window.matchMedia('(pointer: coarse)').matches ? 1.4 : RENDERER_SETTINGS.MAX_PIXEL_RATIO;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, deviceLimit));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = RENDERER_SETTINGS.TONE_MAPPING_EXPOSURE;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+    let shadowElapsed = 0;
 
     const api = {
         renderer,
@@ -31,8 +35,21 @@ export function createRendererModule(canvas) {
         setPixelRatio(r) {
             renderer.setPixelRatio(Math.min(r || 1, RENDERER_SETTINGS.MAX_PIXEL_RATIO));
         },
-        render(scene, camera) {
+        render(scene, camera, dt = 0) {
+            shadowElapsed += dt;
+            if (shadowElapsed >= 0.1) {
+                renderer.shadowMap.needsUpdate = true;
+                shadowElapsed = 0;
+            }
             renderer.render(scene, camera);
+        },
+        requestShadowUpdate() {
+            renderer.shadowMap.needsUpdate = true;
+            shadowElapsed = 0;
+        },
+        getStats() {
+            const { calls, triangles, points, lines } = renderer.info.render;
+            return { calls, triangles, points, lines, geometries: renderer.info.memory.geometries };
         },
         dispose() {
             renderer.dispose();

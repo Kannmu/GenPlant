@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { RENDERER_CONFIG } from '../config/constants.js';
 import { createLights } from './Lights.js';
 import { createGround } from './Ground.js';
@@ -17,29 +17,47 @@ export function createSceneManager() {
     const { group: groundGroup, surface, dais } = createGround();
     scene.add(groundGroup);
 
+    const gardenRoot = new THREE.Group();
+    gardenRoot.name = 'garden-root';
+    const creatorRoot = new THREE.Group();
+    creatorRoot.name = 'creator-root';
+    scene.add(gardenRoot, creatorRoot);
+
     // 预览植物（造物模式），与花园植物分离管理
     let previewObject = null;
 
     // plant registry: id -> { object } 便于集中 dispose 与查找
     const plants = new Map();
+    let elapsed = 0;
+    let windStrength = 0.35;
+    let currentMood = 'morning';
+    let currentMode = 'creator';
+
+    const moodConfig = {
+        morning: { background: 0xdcebd6, fog: 0xdcebd6, groundTint: 0xffffff },
+        day: { background: 0xcfe6e3, fog: 0xcfe6e3, groundTint: 0xf4fff7 },
+        evening: { background: 0xf0d8c6, fog: 0xf0d8c6, groundTint: 0xffead8 }
+    };
 
     const api = {
         scene,
         groundGroup,
         groundSurface: surface,
         groundDais: dais,
+        gardenRoot,
+        creatorRoot,
         lights,
         plants,
         addPlant(id, object) {
             if (!object) return;
-            if (object.parent === scene) return;
-            scene.add(object);
+            if (object.parent === gardenRoot) return;
+            gardenRoot.add(object);
             plants.set(id, object);
         },
         removePlant(id) {
             const obj = plants.get(id);
             if (!obj) return null;
-            if (obj.parent === scene) scene.remove(obj);
+            if (obj.parent === gardenRoot) gardenRoot.remove(obj);
             plants.delete(id);
             return obj;
         },
@@ -62,12 +80,12 @@ export function createSceneManager() {
         setPreview(object) {
             if (previewObject === object) return;
             if (previewObject) {
-                if (previewObject.parent === scene) scene.remove(previewObject);
+                if (previewObject.parent === creatorRoot) creatorRoot.remove(previewObject);
                 disposeObjectSafe(previewObject);
                 previewObject = null;
             }
             if (object) {
-                scene.add(object);
+                creatorRoot.add(object);
                 previewObject = object;
             }
         },
@@ -76,14 +94,40 @@ export function createSceneManager() {
         },
         clearPreview() {
             if (previewObject) {
-                if (previewObject.parent === scene) scene.remove(previewObject);
+                if (previewObject.parent === creatorRoot) creatorRoot.remove(previewObject);
                 disposeObjectSafe(previewObject);
                 previewObject = null;
             }
         },
+        setEnvironment({ mood, wind } = {}) {
+            if (typeof wind === 'number' && Number.isFinite(wind)) {
+                windStrength = THREE.MathUtils.clamp(wind, 0, 1);
+            }
+            if (mood && moodConfig[mood]) {
+                currentMood = mood;
+                const config = moodConfig[currentMood];
+                scene.background.setHex(config.background);
+                scene.fog.color.setHex(config.fog);
+                if (dais.material?.color) dais.material.color.setHex(config.groundTint);
+                lights.setMood?.(currentMood);
+            }
+        },
+        setMode(mode) {
+            currentMode = mode === 'garden' ? 'garden' : 'creator';
+            gardenRoot.visible = currentMode === 'garden';
+            creatorRoot.visible = currentMode === 'creator';
+        },
+        wake(object) {
+            if (!object) return;
+            object.userData.wakeImpulse = 1;
+        },
         update(dt) {
-            // 灯光/地面无 per-frame 自更新；预留扩展（如风吹）
-            void dt;
+            elapsed += dt;
+            if (currentMode === 'creator') {
+                if (previewObject) animatePlant(previewObject, dt);
+            } else {
+                for (const object of plants.values()) animatePlant(object, dt);
+            }
         },
         dispose() {
             api.clearPlants();
@@ -93,7 +137,21 @@ export function createSceneManager() {
         }
     };
 
+    api.setMode(currentMode);
     return api;
+
+    function animatePlant(object, dt) {
+        if (object.userData.baseRotationX == null) {
+            object.userData.baseRotationX = object.rotation.x;
+            object.userData.baseRotationZ = object.rotation.z;
+        }
+        const phase = Number(object.userData.windPhase) || 0;
+        const wake = Math.max(0, Number(object.userData.wakeImpulse) || 0);
+        const amount = (windStrength * 0.032) + (wake * 0.075);
+        object.rotation.z = object.userData.baseRotationZ + Math.sin(elapsed * (1.15 + windStrength) + phase) * amount;
+        object.rotation.x = object.userData.baseRotationX + Math.cos(elapsed * 0.82 + phase * 0.7) * amount * 0.42;
+        if (wake > 0) object.userData.wakeImpulse = Math.max(0, wake - dt * 1.65);
+    }
 }
 
 /**
@@ -103,7 +161,7 @@ function disposeObjectSafe(object) {
     if (!object) return;
     if (object.userData && object.userData.disposed) return;
     object.traverse(function (child) {
-        if (child.geometry && !child.geometry.userData?.disposed) {
+        if (child.geometry && !child.geometry.userData?.shared && !child.geometry.userData?.disposed) {
             child.geometry.dispose();
             child.geometry.userData = child.geometry.userData || {};
             child.geometry.userData.disposed = true;

@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { random, randomFloat, randomFloatNormal, randomFloatSurprise, randomInt, choice } from '../util/random.js';
 import { GENERATOR_CONFIG } from '../config/constants.js';
 import { createPerpendicularVector, safeNormalize } from '../util/geometry.js';
@@ -75,6 +75,7 @@ function generateTreeStructure(parameters) {
         if (currentLevel >= maxLevels) {
             return;
         }
+        if (nodeCounter >= TREE_STRUCTURE.MAX_NODES) return;
 
         // 2. 决定分支数量
         const { min, max } = parameters.structure.branching.branchesPerSplit;
@@ -90,6 +91,7 @@ function generateTreeStructure(parameters) {
         const { BRANCHING } = TREE_STRUCTURE;
         const branchPoints = [];
         for (let i = 0; i < numBranches; i++) {
+            if (nodeCounter >= TREE_STRUCTURE.MAX_NODES) break;
             const isLeader = (i === 0 && currentLevel < BRANCHING.LEADER_LEVEL_THRESHOLD);
             const branchPointT = isLeader ? 1.0 : randomFloat(BRANCHING.BRANCH_POINT_RANGE.MIN, BRANCHING.BRANCH_POINT_RANGE.MAX);
             branchPoints.push(branchPointT);

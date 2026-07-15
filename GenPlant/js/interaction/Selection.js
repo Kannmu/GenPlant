@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { GARDEN_CONFIG } from '../config/constants.js';
 
 /**

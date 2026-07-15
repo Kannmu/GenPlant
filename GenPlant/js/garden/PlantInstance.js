@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { RENDERER_CONFIG } from '../config/constants.js';
 
 /**
@@ -17,6 +17,7 @@ export function createPlantInstance({ group, baseSeed, params, materialStyle = '
 
     group.position.set(x, groundBaseY(), z);
     group.rotation.y = rotationY;
+    const focusPoint = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
 
     const instance = {
         id,
@@ -28,6 +29,7 @@ export function createPlantInstance({ group, baseSeed, params, materialStyle = '
         growth: 0,          // 0..1 生长进度
         growing: true,
         disposed: false,
+        focusPoint,
         descriptor: {            // 序列化用
             seed: '',
             x, z, rotationY
@@ -38,7 +40,7 @@ export function createPlantInstance({ group, baseSeed, params, materialStyle = '
 
 function groundBaseY() {
     // 局部底面落在 groundSurface 高度（与 Ground 中 surface.position.y 对齐）
-    return RENDERER_CONFIG.GROUND.POSITION_Y - RENDERER_CONFIG.GROUND.HEIGHT / 2;
+    return RENDERER_CONFIG.GROUND.POSITION_Y + RENDERER_CONFIG.GROUND.HEIGHT / 2;
 }
 
 /**

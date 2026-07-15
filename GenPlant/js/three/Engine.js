@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { RENDERER_CONFIG } from '../config/constants.js';
 import { createRendererModule } from './RendererModule.js';
 import { createSceneManager } from './SceneManager.js';
@@ -12,10 +12,10 @@ import { createCameraRig } from './CameraRig.js';
  */
 export function createEngine(canvas) {
     const { CAMERA, GROUND } = RENDERER_CONFIG;
-    const clock = new THREE.Clock();
     let rafId = null;
     let contextLost = false;
     let running = false;
+    let lastFrameTime = performance.now();
 
     const sceneManager = createSceneManager();
     const rendererModule = createRendererModule(canvas);
@@ -33,6 +33,7 @@ export function createEngine(canvas) {
         controls: cameraRig.controls,
         cameraRig,
         addUpdater,
+        getStats() { return rendererModule.getStats(); },
         get contextLost() { return contextLost; },
 
         // 由 App 注册：context 恢复后渐进重生花园
@@ -41,8 +42,8 @@ export function createEngine(canvas) {
         start() {
             if (running) return;
             running = true;
-            clock.start();
-            animate();
+            lastFrameTime = performance.now();
+            rafId = requestAnimationFrame(animate);
         },
 
         stop() {
@@ -51,7 +52,6 @@ export function createEngine(canvas) {
                 cancelAnimationFrame(rafId);
                 rafId = null;
             }
-            clock.stop();
         },
 
         resize(w, h) {
@@ -60,6 +60,7 @@ export function createEngine(canvas) {
             cameraRig.camera.aspect = w / h;
             cameraRig.camera.updateProjectionMatrix();
             sceneManager.lights.fitShadowToCamera(cameraRig.camera, cameraRig.controls.target);
+            rendererModule.requestShadowUpdate();
         },
 
         dispose() {
@@ -74,17 +75,18 @@ export function createEngine(canvas) {
         }
     };
 
-    function animate() {
+    function animate(now) {
         if (!running) return;
         rafId = requestAnimationFrame(animate);
         if (contextLost) return; // 丢失期间不渲染
-        const dt = clock.getDelta();
+        const dt = Math.min(0.05, Math.max(0, (now - lastFrameTime) / 1000));
+        lastFrameTime = now;
         for (const fn of [...updaters]) {
             try { fn(dt); } catch (err) { console.error('engine updater threw:', err); }
         }
         sceneManager.update(dt);
         cameraRig.update(dt);
-        rendererModule.render(sceneManager.scene, cameraRig.camera);
+        rendererModule.render(sceneManager.scene, cameraRig.camera, dt);
     }
 
     // ---- ResizeObserver：观察父容器 ----
@@ -119,7 +121,6 @@ export function createEngine(canvas) {
             cancelAnimationFrame(rafId);
             rafId = null;
         }
-        clock.stop();
         console.warn('GenPlant: WebGL context lost — will restore on restore event.');
     }
     function handleContextRestored() {
@@ -129,7 +130,7 @@ export function createEngine(canvas) {
         if (typeof api.onContextRestored === 'function') {
             try { api.onContextRestored(); } catch (err) { console.error('onContextRestored threw:', err); }
         }
-        clock.start();
+        lastFrameTime = performance.now();
         if (running) {
             // ensure loop restarted
             running = false;

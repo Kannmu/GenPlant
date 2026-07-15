@@ -27,7 +27,10 @@ export const DEFAULT_PARAMS = {
     rotationMax: 2.2,
     levels: 5,
     branchesPerSplitMin: 2,
-    branchesPerSplitMax: 3
+    branchesPerSplitMax: 3,
+    leafiness: 0.64,
+    bloom: 0.28,
+    palette: -1
 };
 
 // 滑块元数据（顺序同时也是 seed.js 的字段编码顺序）
@@ -46,7 +49,57 @@ export const SLIDERS = [
     { key: 'levels',             label: '层数 Levels',             min: 2,    max: 7,     step: 1,      default: 5 },
     { key: 'branchesPerSplitMin',label: '分叉数小 Branch min',     min: 2,    max: 5,     step: 1,      default: 2 },
     { key: 'branchesPerSplitMax',label: '分叉数大 Branch max',     min: 2,    max: 5,     step: 1,      default: 3 },
+    { key: 'leafiness',          label: '叶片密度 Leafiness',       min: 0,    max: 1,     step: 0.01,   default: 0.64 },
+    { key: 'bloom',              label: '花芽密度 Bloom',           min: 0,    max: 1,     step: 0.01,   default: 0.28 },
+    { key: 'palette',            label: '叶色 Palette',             min: -1,   max: 4,     step: 1,      default: -1 },
 ];
+
+export const PLANT_PRESETS = {
+    canopy: {
+        label: '云冠',
+        params: {
+            gravitropism: 0.82, phototropismX: 0, phototropismZ: 0,
+            pruning: 0.12, splitAngleMin: 0.18, splitAngleMax: 0.62,
+            lengthDecay: 0.76, curvinessFreq: 1.05, curvinessAmp: 0.10,
+            rotationMin: 0.35, rotationMax: 1.9, levels: 5,
+            branchesPerSplitMin: 2, branchesPerSplitMax: 3,
+            leafiness: 0.9, bloom: 0.14, palette: 0
+        }
+    },
+    breeze: {
+        label: '风迹',
+        params: {
+            gravitropism: 0.28, phototropismX: 0.48, phototropismZ: -0.18,
+            pruning: 0.32, splitAngleMin: 0.34, splitAngleMax: 0.86,
+            lengthDecay: 0.76, curvinessFreq: 1.35, curvinessAmp: 0.28,
+            rotationMin: 0.3, rotationMax: 2.7, levels: 5,
+            branchesPerSplitMin: 2, branchesPerSplitMax: 3,
+            leafiness: 0.66, bloom: 0.22, palette: 1
+        }
+    },
+    coral: {
+        label: '珊瑚',
+        params: {
+            gravitropism: 0.08, phototropismX: 0.08, phototropismZ: 0.08,
+            pruning: 0.24, splitAngleMin: 0.68, splitAngleMax: 1.16,
+            lengthDecay: 0.68, curvinessFreq: 2.05, curvinessAmp: 0.17,
+            rotationMin: 0.95, rotationMax: 3.05, levels: 5,
+            branchesPerSplitMin: 3, branchesPerSplitMax: 4,
+            leafiness: 0.48, bloom: 0.38, palette: 2
+        }
+    },
+    blossom: {
+        label: '星芽',
+        params: {
+            gravitropism: 0.7, phototropismX: -0.08, phototropismZ: 0.12,
+            pruning: 0.18, splitAngleMin: 0.3, splitAngleMax: 0.75,
+            lengthDecay: 0.65, curvinessFreq: 1.6, curvinessAmp: 0.14,
+            rotationMin: 0.55, rotationMax: 2.45, levels: 4,
+            branchesPerSplitMin: 3, branchesPerSplitMax: 4,
+            leafiness: 0.74, bloom: 0.92, palette: 3
+        }
+    }
+};
 
 // ---- 默认全局状态 ----
 export function randomBaseSeed() {

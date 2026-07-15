@@ -1,4 +1,4 @@
-import * as THREE from "https://esm.sh/three";
+﻿import * as THREE from "three";
 import { generate } from '../generator/index.js';
 import { RENDERER_CONFIG } from '../config/constants.js';
 
@@ -12,6 +12,7 @@ import { RENDERER_CONFIG } from '../config/constants.js';
 export function createCreatorController({ sceneManager, cameraRig }) {
     const PREVIEW_MATERIAL_STYLE = 'standard';
     let currentDesc = null;
+    let hasFramed = false;
 
     localizePreviewAtOrigin();
 
@@ -30,7 +31,12 @@ export function createCreatorController({ sceneManager, cameraRig }) {
         normalizePreviewToGround(group);
         sceneManager.setPreview(group);
         currentDesc = { baseSeed, params: { ...params }, materialStyle: opts.materialStyle || PREVIEW_MATERIAL_STYLE };
-        cameraRig.setTarget(new THREE.Vector3(0, RENDERER_CONFIG.GROUND.POSITION_Y, 0));
+        const center = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
+        cameraRig.setTarget(center);
+        if (!hasFramed) {
+            cameraRig.frameObject(group, previewPadding());
+            hasFramed = true;
+        }
         return currentDesc;
     }
 
@@ -41,7 +47,17 @@ export function createCreatorController({ sceneManager, cameraRig }) {
 
     function getDescriptor() { return currentDesc; }
 
-    return { regeneratePreview, clearPreview, getDescriptor };
+    function focus() {
+        const preview = sceneManager.getPreview();
+        if (preview) cameraRig.frameObject(preview, previewPadding());
+    }
+
+    function wake() {
+        const preview = sceneManager.getPreview();
+        if (preview) sceneManager.wake(preview);
+    }
+
+    return { regeneratePreview, clearPreview, getDescriptor, focus, wake };
 }
 
 function normalizePreviewToGround(group) {
@@ -56,14 +72,18 @@ function normalizePreviewToGround(group) {
     box2.getCenter(center2);
     group.position.x -= center2.x;
     group.position.z -= center2.z;
-    group.position.y = RENDERER_CONFIG.GROUND.POSITION_Y - RENDERER_CONFIG.GROUND.HEIGHT / 2 - box2.min.y;
+    group.position.y = RENDERER_CONFIG.GROUND.POSITION_Y + RENDERER_CONFIG.GROUND.HEIGHT / 2 - box2.min.y;
 
     group.traverse(function (child) {
         if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = false;
+            child.castShadow = !child.isInstancedMesh;
+            child.receiveShadow = child.isInstancedMesh;
         }
     });
 }
 
 function localizePreviewAtOrigin() { /* 占位，预览即位于原点 */ }
+
+function previewPadding() {
+    return window.innerWidth < 600 ? 2.4 : 1.38;
+}
