@@ -1,5 +1,5 @@
 ﻿import * as THREE from "three";
-import { GARDEN_CONFIG } from '../config/constants.js';
+import { GARDEN_CONFIG, RENDERER_CONFIG } from '../config/constants.js';
 import { createPlantInstance } from './PlantInstance.js';
 import { encodeState } from '../core/seed.js';
 
@@ -30,24 +30,27 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
         size() { return instances.size; },
         get(id) { return instances.get(id) || null; },
         getAll() { return [...instances.values()]; },
+        canPlaceAt(x, z) { return isWithinPlantingArea(x, z); },
         findOpenPosition(x, z, minDistance = 9) {
+            const origin = clampToPlantingArea(x, z);
             const occupied = (px, pz) => [...instances.values()].some(instance => {
                 const dx = instance.descriptor.x - px;
                 const dz = instance.descriptor.z - pz;
                 return dx * dx + dz * dz < minDistance * minDistance;
             });
-            if (!occupied(x, z)) return { x, z };
-            for (let ring = 1; ring <= 8; ring++) {
+            if (!occupied(origin.x, origin.z)) return origin;
+            const maxRings = Math.ceil((getPlantingRadius() * 2) / minDistance);
+            for (let ring = 1; ring <= maxRings; ring++) {
                 const radius = minDistance * ring;
                 const samples = 8 + ring * 4;
                 for (let i = 0; i < samples; i++) {
                     const angle = (i / samples) * Math.PI * 2;
-                    const px = x + Math.cos(angle) * radius;
-                    const pz = z + Math.sin(angle) * radius;
-                    if (!occupied(px, pz)) return { x: px, z: pz };
+                    const px = origin.x + Math.cos(angle) * radius;
+                    const pz = origin.z + Math.sin(angle) * radius;
+                    if (isWithinPlantingArea(px, pz) && !occupied(px, pz)) return { x: px, z: pz };
                 }
             }
-            return { x, z };
+            return null;
         },
 
         /**
@@ -55,8 +58,14 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
          * @returns instance or null
          */
         placeAt(group, baseSeed, params, materialStyle, x, z, opts = {}) {
+            if (!isWithinPlantingArea(x, z)) {
+                toast && toast.show('只能种植在圆台范围内', 1800);
+                disposeGroup(group);
+                return null;
+            }
             if (instances.size >= GARDEN_CONFIG.MAX_PLANTS) {
                 toast && toast.show(`已达上限 ${GARDEN_CONFIG.MAX_PLANTS} 株，删去一些再放`, 2600);
+                disposeGroup(group);
                 return null;
             }
             const rotationY = opts.rotationY != null
@@ -194,6 +203,31 @@ export function createGardenManager({ sceneManager, growthAnimator, selection, t
     }
 
     return api;
+}
+
+export function getPlantingRadius() {
+    return Math.max(0.01, RENDERER_CONFIG.GROUND.RADIUS - GARDEN_CONFIG.PLACEMENT_EDGE_MARGIN);
+}
+
+export function isWithinPlantingArea(x, z) {
+    const px = Number(x);
+    const pz = Number(z);
+    if (!Number.isFinite(px) || !Number.isFinite(pz)) return false;
+    const radius = getPlantingRadius();
+    return px * px + pz * pz <= radius * radius + 1e-8;
+}
+
+function clampToPlantingArea(x, z) {
+    let px = Number.isFinite(Number(x)) ? Number(x) : 0;
+    let pz = Number.isFinite(Number(z)) ? Number(z) : 0;
+    const radius = getPlantingRadius();
+    const distance = Math.hypot(px, pz);
+    if (distance > radius && distance > 0) {
+        const scale = radius / distance;
+        px *= scale;
+        pz *= scale;
+    }
+    return { x: px, z: pz };
 }
 
 function enableShadowsForPlant(group) {

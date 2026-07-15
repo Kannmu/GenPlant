@@ -16,9 +16,10 @@ export function createFoliage(parameters, structure, plant, opts = {}) {
     const maxLeaves = Math.max(12, Math.floor(420 * qualityScale));
     const rand = mulberry32(((parameters.global.seed >>> 0) ^ 0x9e3779b9) >>> 0);
     const palette = MATERIAL_CONFIG.PALETTES[appearance.palette] || MATERIAL_CONFIG.PALETTES[0];
-    const selectedTips = sampleTips(tips, maxLeaves, rand);
-    const leavesPerTip = appearance.leafiness > 0.72 ? 2 : 1;
-    const leafCount = Math.min(maxLeaves, selectedTips.length * leavesPerTip);
+    const leafSites = collectLeafSites(tips);
+    const desiredLeaves = Math.max(1, Math.round(tips.length * (0.25 + appearance.leafiness * 1.45)));
+    const selectedSites = sampleItems(leafSites, Math.min(maxLeaves, desiredLeaves), rand);
+    const leafCount = selectedSites.length;
 
     const leafGeometry = getLeafGeometry();
     const leafMaterial = getLeafMaterial(appearance.palette);
@@ -36,22 +37,19 @@ export function createFoliage(parameters, structure, plant, opts = {}) {
     const scale = new THREE.Vector3();
     let leafIndex = 0;
 
-    for (let i = 0; i < selectedTips.length && leafIndex < leafCount; i++) {
-        const tip = selectedTips[i];
-        const position = tip.curve.getPointAt(1);
-        const tangent = tip.curve.getTangentAt(1).normalize();
-        const pairCount = Math.min(leavesPerTip, leafCount - leafIndex);
-        for (let p = 0; p < pairCount; p++) {
-            quaternion.setFromUnitVectors(UP, tangent);
-            twist.setFromAxisAngle(tangent, (p * Math.PI) + (rand() - 0.5) * 0.8);
-            quaternion.premultiply(twist);
-            const size = 0.17 + rand() * 0.13;
-            scale.set(size * (0.72 + rand() * 0.22), size * (1.18 + rand() * 0.32), 1);
-            matrix.compose(position, quaternion, scale);
-            leaves.setMatrixAt(leafIndex, matrix);
-            leaves.setColorAt(leafIndex, new THREE.Color().lerpColors(baseLeaf, tipLeaf, 0.25 + rand() * 0.75));
-            leafIndex++;
-        }
+    for (let i = 0; i < selectedSites.length && leafIndex < leafCount; i++) {
+        const site = selectedSites[i];
+        const position = site.curve.getPointAt(site.t);
+        const tangent = site.curve.getTangentAt(site.t).normalize();
+        quaternion.setFromUnitVectors(UP, tangent);
+        twist.setFromAxisAngle(tangent, i * 2.399963229728653 + (rand() - 0.5) * 0.62);
+        quaternion.premultiply(twist);
+        const size = (0.15 + rand() * 0.12) * (0.88 + site.t * 0.12);
+        scale.set(size * (0.72 + rand() * 0.22), size * (1.18 + rand() * 0.32), 1);
+        matrix.compose(position, quaternion, scale);
+        leaves.setMatrixAt(leafIndex, matrix);
+        leaves.setColorAt(leafIndex, new THREE.Color().lerpColors(baseLeaf, tipLeaf, 0.25 + rand() * 0.75));
+        leafIndex++;
     }
     leaves.instanceMatrix.needsUpdate = true;
     if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
@@ -60,7 +58,8 @@ export function createFoliage(parameters, structure, plant, opts = {}) {
     plant.add(leaves);
 
     const bloomChance = Math.pow(appearance.bloom || 0, 1.25);
-    const bloomTips = selectedTips.filter(() => rand() < bloomChance * 0.55);
+    const bloomTips = sampleItems(tips, Math.min(tips.length, maxLeaves), rand)
+        .filter(() => rand() < bloomChance * 0.55);
     if (bloomTips.length > 0) addBlooms(plant, bloomTips, palette.bloom, rand, qualityScale);
     return plant;
 }
@@ -158,6 +157,16 @@ function collectTips(root) {
     return tips;
 }
 
+function collectLeafSites(tips) {
+    const sites = [];
+    for (const tip of tips) {
+        sites.push({ curve: tip.curve, t: 1 });
+        sites.push({ curve: tip.curve, t: 0.62 });
+        sites.push({ curve: tip.curve, t: 0.34 });
+    }
+    return sites;
+}
+
 function sampleTips(tips, maxCount, rand) {
     const target = Math.min(tips.length, maxCount);
     if (tips.length <= target) return tips;
@@ -167,6 +176,10 @@ function sampleTips(tips, maxCount, rand) {
         [copy[i], copy[j]] = [copy[j], copy[i]];
     }
     return copy.slice(0, target);
+}
+
+function sampleItems(items, maxCount, rand) {
+    return sampleTips(items, maxCount, rand);
 }
 
 function mulberry32(seed) {

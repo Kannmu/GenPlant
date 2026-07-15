@@ -26,6 +26,9 @@ export function createRendererModule(canvas) {
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     let shadowElapsed = 0;
+    const shadowUpdateInterval = window.matchMedia('(pointer: coarse)').matches
+        ? RENDERER_SETTINGS.COARSE_SHADOW_UPDATE_INTERVAL
+        : RENDERER_SETTINGS.SHADOW_UPDATE_INTERVAL;
 
     const api = {
         renderer,
@@ -37,7 +40,7 @@ export function createRendererModule(canvas) {
         },
         render(scene, camera, dt = 0) {
             shadowElapsed += dt;
-            if (shadowElapsed >= 0.1) {
+            if (shadowElapsed >= shadowUpdateInterval) {
                 renderer.shadowMap.needsUpdate = true;
                 shadowElapsed = 0;
             }

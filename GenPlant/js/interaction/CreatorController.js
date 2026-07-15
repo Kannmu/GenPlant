@@ -9,15 +9,17 @@ import { RENDERER_CONFIG } from '../config/constants.js';
  *
  * 预览植物锚定到场景原点上方（地面顶面），相机 target 设为预览根部。
  */
-export function createCreatorController({ sceneManager, cameraRig }) {
+export function createCreatorController({ sceneManager, cameraRig, onPreviewChanged, onPreviewGenerated }) {
     const PREVIEW_MATERIAL_STYLE = 'standard';
     let currentDesc = null;
     let hasFramed = false;
+    let currentCastsShadow = false;
 
     localizePreviewAtOrigin();
 
     function regeneratePreview(baseSeed, params, opts = {}) {
         // 清旧预览（含 dispose）
+        const startedAt = performance.now();
         let group;
         try {
             group = generate(baseSeed, params, {
@@ -28,8 +30,15 @@ export function createCreatorController({ sceneManager, cameraRig }) {
             console.error('preview regen failed:', err);
             return null;
         }
-        normalizePreviewToGround(group);
+        const nextCastsShadow = !opts.previewQuality;
+        normalizePreviewToGround(group, nextCastsShadow);
         sceneManager.setPreview(group);
+        if (currentCastsShadow || nextCastsShadow) onPreviewChanged?.();
+        currentCastsShadow = nextCastsShadow;
+        onPreviewGenerated?.({
+            quality: opts.previewQuality ? 'draft' : 'full',
+            generationMs: performance.now() - startedAt
+        });
         currentDesc = { baseSeed, params: { ...params }, materialStyle: opts.materialStyle || PREVIEW_MATERIAL_STYLE };
         const center = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
         cameraRig.setTarget(center);
@@ -42,6 +51,8 @@ export function createCreatorController({ sceneManager, cameraRig }) {
 
     function clearPreview() {
         sceneManager.clearPreview();
+        if (currentCastsShadow) onPreviewChanged?.();
+        currentCastsShadow = false;
         currentDesc = null;
     }
 
@@ -60,7 +71,7 @@ export function createCreatorController({ sceneManager, cameraRig }) {
     return { regeneratePreview, clearPreview, getDescriptor, focus, wake };
 }
 
-function normalizePreviewToGround(group) {
+function normalizePreviewToGround(group, castShadows) {
     const box = new THREE.Box3().setFromObject(group);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -76,7 +87,7 @@ function normalizePreviewToGround(group) {
 
     group.traverse(function (child) {
         if (child.isMesh) {
-            child.castShadow = !child.isInstancedMesh;
+            child.castShadow = castShadows && !child.isInstancedMesh;
             child.receiveShadow = child.isInstancedMesh;
         }
     });

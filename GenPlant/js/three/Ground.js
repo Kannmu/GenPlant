@@ -1,9 +1,9 @@
 ﻿import * as THREE from "three";
-import { RENDERER_CONFIG } from '../config/constants.js';
+import { GARDEN_CONFIG, RENDERER_CONFIG } from '../config/constants.js';
 
 /**
  * 地面——软圆形台基 + 径向顶点色渐变 + 下方低透明菲涅尔光晕环。
- * raycast 目标 surface：用一张隐形大圆盘作为可点击范围，棋盘小球仅作视觉台基。
+ * raycast 目标 surface 与可见圆台共用边界，避免在台外放置植物。
  *
  * 返回 { group, surface }:
  *   group    - 可见地面，加入场景
@@ -37,8 +37,9 @@ export function createGround() {
     dais.userData.ground = true;
     group.add(dais);
 
-    // raycast 用的水平大圆盘（顶视图，与台基顶面齐平）
-    const surfaceRadius = Math.max(radius * 1.5, 60);
+    // raycast 用的水平圆盘（顶视图，与台基顶面齐平）。留出少量边缘安全区，
+    // 使树干基部不会悬在圆台侧面之外。
+    const surfaceRadius = Math.max(0.01, radius - GARDEN_CONFIG.PLACEMENT_EDGE_MARGIN);
     const surfaceGeometry = new THREE.CircleGeometry(surfaceRadius, 96);
     surfaceGeometry.rotateX(-Math.PI / 2);
     // 顶点色渐变（中心亮→边缘暗一点），让放置范围有微弱暗示

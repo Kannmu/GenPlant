@@ -7,9 +7,11 @@ import * as THREE from "three";
 
 // ==================== 种子 schema ====================
 export const SEED_SCHEMA = {
-    VERSION: 1,
-    PREFIX: 'G1',          // 编码字符串前缀，便于识别与未来迁移
-    GARDEN_PREFIX: 'P',     // 花园（多植物）序列化前缀
+    VERSION: 2,
+    PREFIX: 'G2',
+    LEGACY_PREFIX: 'G1',
+    GARDEN_PREFIX: 'P2',
+    LEGACY_GARDEN_PREFIX: 'P'
 };
 
 // ==================== 渲染器配置 ====================
@@ -80,7 +82,9 @@ export const RENDERER_CONFIG = {
 
     RENDERER_SETTINGS: {
         TONE_MAPPING_EXPOSURE: 1.08,
-        MAX_PIXEL_RATIO: 1.75
+        MAX_PIXEL_RATIO: 1.75,
+        SHADOW_UPDATE_INTERVAL: 0.16,
+        COARSE_SHADOW_UPDATE_INTERVAL: 0.24
     },
 
     MODEL_SCALING: {
@@ -148,9 +152,9 @@ export const GENERATOR_CONFIG = {
 // ==================== 几何体生成配置 ====================
 export const GEOMETRY_CONFIG = {
     TUBE_MESH: {
-        MIN_RADIAL_SEGMENTS: 8,
+        MIN_RADIAL_SEGMENTS: 6,
         RADIAL_SEGMENTS_MULTIPLIER: 12,
-        MIN_TUBULAR_SEGMENTS: 8,
+        MIN_TUBULAR_SEGMENTS: 6,
         TUBULAR_SEGMENTS_MULTIPLIER: 4,
         MIN_RADIUS: 0.01
     },
@@ -161,7 +165,7 @@ export const GEOMETRY_CONFIG = {
     },
 
     // 预览模式（造物滑块拖动时）降低分段以保证流畅；释放后重建全分辨率
-    PREVIEW_SEGMENTS_SCALE: 0.6
+    PREVIEW_SEGMENTS_SCALE: 0.5
 };
 
 // ==================== 参数生成配置 ====================
@@ -241,6 +245,7 @@ export const MATERIAL_CONFIG = {
 // ==================== 花园 / 生长配置 ====================
 export const GARDEN_CONFIG = {
     MAX_PLANTS: 60,
+    PLACEMENT_EDGE_MARGIN: 0.75,
     UNDO_STACK_SIZE: 50,
     GROWTH_DURATION_MS: 700,
     MAX_RESTORE_PER_FRAME: 2,

@@ -3,7 +3,7 @@ import { createModeTabs } from './ModeTabs.js';
 import { createPanel } from './Panel.js';
 import { createToast } from './Toast.js';
 import { createGenes } from './Genes.js';
-import { encodeState, decodeState } from '../core/seed.js';
+import { encodeState, decodeState, isEncodedState } from '../core/seed.js';
 import { describePlant } from '../core/naming.js';
 import { debounce, copyToClipboard } from '../util/dom.js';
 import { createElement, Pencil, Trash2 } from 'lucide';
@@ -170,7 +170,7 @@ export function createUIController(store, actions = {}) {
     function syncSeedInputFromState() {
         const st = store.getState();
         const str = encodeState({ baseSeed: st.baseSeed, params: st.params });
-        if (document.activeElement !== ids.seedInput || !ids.seedInput.value.startsWith('G1-')) {
+        if (document.activeElement !== ids.seedInput || !isEncodedState(ids.seedInput.value)) {
             ids.seedInput.value = str;
         }
     }

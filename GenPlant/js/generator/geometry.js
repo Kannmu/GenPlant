@@ -5,6 +5,7 @@ import { calculateTubeSegments } from '../util/geometry.js';
 
 // Frenet frames缓存，避免重复计算
 const frenetFramesCache = new WeakMap();
+const circleSamplesCache = new Map();
 
 
 export function createGeometry(parameters, structure, opts = {}) {
@@ -34,7 +35,7 @@ export function createGeometry(parameters, structure, opts = {}) {
         const meshData = generateTubeMesh(node.curve, tubularSegments, radialSegments, startRadius, endRadius);
 
         // 分支与父节点连接的核心逻辑
-        if (parentNode && parentNode.curve && typeof node.attachmentT === 'number') {
+        if (!opts.previewQuality && parentNode && parentNode.curve && typeof node.attachmentT === 'number') {
             if (!parentNode.tubularSegments) {
                 const parentSegments = calculateTubeSegments(
                     parentNode.startRadius,
@@ -126,7 +127,7 @@ export function createGeometry(parameters, structure, opts = {}) {
         }
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-        geometry.setIndex(meshData.indices);
+        geometry.setIndex(new THREE.BufferAttribute(meshData.indices, 1));
 
         geometries.push({ geometry: geometry, node: node, levelProgress: levelProgress });
 
@@ -160,10 +161,15 @@ function generateTubeMesh(curve, tubularSegments, radialSegments, startRadius, e
     }
 
     const { normals: frameNormals, binormals } = frames;
+    const circleSamples = getCircleSamples(radialSegments);
 
-    const vertices = [];
-    const vertexNormals = [];
-    const indices = [];
+    const ringSize = radialSegments + 1;
+    const vertexCount = (tubularSegments + 1) * ringSize;
+    const vertices = new Float32Array(vertexCount * 3);
+    const vertexNormals = new Float32Array(vertexCount * 3);
+    const IndexArray = vertexCount > 65535 ? Uint32Array : Uint16Array;
+    const indices = new IndexArray(tubularSegments * radialSegments * 6);
+    let vertexOffset = 0;
 
     for (let i = 0; i <= tubularSegments; i++) {
         const t = i / tubularSegments;
@@ -174,34 +180,51 @@ function generateTubeMesh(curve, tubularSegments, radialSegments, startRadius, e
         const binormal = binormals[i];
 
         for (let j = 0; j <= radialSegments; j++) {
-            const angle = (j / radialSegments) * Math.PI * 2;
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
+            const cos = circleSamples.cos[j];
+            const sin = circleSamples.sin[j];
 
-            const vertexNormal = new THREE.Vector3(
-                cos * normal.x + sin * binormal.x,
-                cos * normal.y + sin * binormal.y,
-                cos * normal.z + sin * binormal.z
-            ).normalize();
-            vertexNormals.push(vertexNormal.x, vertexNormal.y, vertexNormal.z);
-
-            const vertex = new THREE.Vector3()
-                .copy(point)
-                .add(vertexNormal.clone().multiplyScalar(radius));
-            vertices.push(vertex.x, vertex.y, vertex.z);
+            const nx = cos * normal.x + sin * binormal.x;
+            const ny = cos * normal.y + sin * binormal.y;
+            const nz = cos * normal.z + sin * binormal.z;
+            vertexNormals[vertexOffset] = nx;
+            vertexNormals[vertexOffset + 1] = ny;
+            vertexNormals[vertexOffset + 2] = nz;
+            vertices[vertexOffset] = point.x + nx * radius;
+            vertices[vertexOffset + 1] = point.y + ny * radius;
+            vertices[vertexOffset + 2] = point.z + nz * radius;
+            vertexOffset += 3;
         }
     }
 
+    let indexOffset = 0;
     for (let i = 0; i < tubularSegments; i++) {
         for (let j = 0; j < radialSegments; j++) {
             const a = i * (radialSegments + 1) + j;
             const b = a + 1;
             const c = (i + 1) * (radialSegments + 1) + j;
             const d = c + 1;
-            indices.push(a, b, d);
-            indices.push(a, d, c);
+            indices[indexOffset++] = a;
+            indices[indexOffset++] = b;
+            indices[indexOffset++] = d;
+            indices[indexOffset++] = a;
+            indices[indexOffset++] = d;
+            indices[indexOffset++] = c;
         }
     }
 
     return { vertices, normals: vertexNormals, indices };
+}
+
+function getCircleSamples(radialSegments) {
+    if (circleSamplesCache.has(radialSegments)) return circleSamplesCache.get(radialSegments);
+    const cos = new Float32Array(radialSegments + 1);
+    const sin = new Float32Array(radialSegments + 1);
+    for (let i = 0; i <= radialSegments; i++) {
+        const angle = (i / radialSegments) * Math.PI * 2;
+        cos[i] = Math.cos(angle);
+        sin[i] = Math.sin(angle);
+    }
+    const samples = { cos, sin };
+    circleSamplesCache.set(radialSegments, samples);
+    return samples;
 }

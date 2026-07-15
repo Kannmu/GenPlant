@@ -142,14 +142,18 @@ export function calculateTubeSegments(radius, length, config, previewScale = 1) 
         }
     }
     
+    const qualityScale = Math.min(1, Math.max(0.25, Number(previewScale) || 1));
+    const minRadialSegments = Math.max(3, Math.round(config.MIN_RADIAL_SEGMENTS * qualityScale));
+    const minTubularSegments = Math.max(3, Math.round(config.MIN_TUBULAR_SEGMENTS * qualityScale));
+
     const radialSegments = Math.max(
-        config.MIN_RADIAL_SEGMENTS,
-        Math.round(radius * config.RADIAL_SEGMENTS_MULTIPLIER * previewScale)
+        minRadialSegments,
+        Math.round(radius * config.RADIAL_SEGMENTS_MULTIPLIER * qualityScale)
     );
 
     const tubularSegments = Math.max(
-        config.MIN_TUBULAR_SEGMENTS,
-        Math.floor(length * config.TUBULAR_SEGMENTS_MULTIPLIER * previewScale)
+        minTubularSegments,
+        Math.floor(length * config.TUBULAR_SEGMENTS_MULTIPLIER * qualityScale)
     );
     
     return { radialSegments, tubularSegments };

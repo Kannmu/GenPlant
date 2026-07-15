@@ -79,8 +79,8 @@ function generateTreeStructure(parameters) {
 
         // 2. 决定分支数量
         const { min, max } = parameters.structure.branching.branchesPerSplit;
-        const numBranches = randomInt(min, max);
-        if (numBranches === 0) {
+        const numBranches = Math.min(randomInt(min, max), TREE_STRUCTURE.MAX_NODES - nodeCounter);
+        if (numBranches <= 0) {
             return;
         }
         
@@ -117,6 +117,7 @@ function generateTreeStructure(parameters) {
         const scaleFactor = childAreaSum > 0 ? parentArea / childAreaSum : 0;
 
         for (let i = 0; i < numBranches; i++) {
+            if (nodeCounter >= TREE_STRUCTURE.MAX_NODES) break;
 
            // 修剪
             if (currentLevel > BRANCHING.PRUNING_LEVEL_THRESHOLD) {
@@ -179,11 +180,15 @@ function calculateBranchCurve(startPoint, branchOrientation, length, curviness, 
 
     // 使用弯曲参数定义贝塞尔曲线的控制点
     const curvinessAmplitude = curviness.y;
+    const curvinessFrequency = Math.max(0.25, curviness.x);
+    const spatialPhase = startPoint.x * 0.731 + startPoint.y * 0.193 + startPoint.z * 0.517
+        + branchOrientation.x * 1.137 + branchOrientation.z * 0.863;
+    const rhythm = Math.sin(spatialPhase + curvinessFrequency * Math.PI * 0.65);
 
     // 创建垂直于分支主方向的偏移向量
     const perpendicular = createPerpendicularVector(branchOrientation, random);
 
-    const controlPointOffset = length * curvinessAmplitude;
+    const controlPointOffset = length * curvinessAmplitude * (0.76 + Math.abs(rhythm) * 0.34);
 
     // 第一个控制点决定曲线的起始切线
     // 通过使用父分支的方向，我们确保平滑的C1连续性
@@ -193,8 +198,9 @@ function calculateBranchCurve(startPoint, branchOrientation, length, curviness, 
         .copy(startPoint)
         .add(parentEndOrientation.clone().multiplyScalar(controlPoint1Distance));
 
+    const controlPoint2Position = clamp(CURVE.CONTROL_POINT_2_POSITION + rhythm * 0.08, 0.58, 0.86);
     const controlPoint2 = new THREE.Vector3()
-        .lerpVectors(startPoint, endPoint, CURVE.CONTROL_POINT_2_POSITION)
+        .lerpVectors(startPoint, endPoint, controlPoint2Position)
         .add(perpendicular.clone().multiplyScalar(-controlPointOffset * 
             randomFloatNormal(1.0, 0.25)));
 

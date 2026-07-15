@@ -7,6 +7,7 @@ import { randomBaseSeed, SLIDERS } from '../state/defaults.js';
 import { createTemplateLibrary } from '../state/templates.js';
 import { writePlantSeedToURL, writeGardenToURL, saveGarden, loadGarden, readFromURL } from '../state/persistence.js';
 import { debounce, copyToClipboard } from '../util/dom.js';
+import { createLivePreviewScheduler } from '../util/previewScheduler.js';
 import { GARDEN_CONFIG } from '../config/constants.js';
 import { generate } from '../generator/index.js';
 import { createPlantFactory } from '../generator/PlantFactory.js';
@@ -88,7 +89,17 @@ export function createApp() {
         canvas.dataset.cameraDistance = cameraRig.camera.position.distanceTo(cameraRig.controls.target).toFixed(1);
     });
 
-    const creatorController = createCreatorController({ sceneManager, cameraRig });
+    let previewRevision = 0;
+    const creatorController = createCreatorController({
+        sceneManager,
+        cameraRig,
+        onPreviewChanged: () => engine.renderer.requestShadowUpdate(),
+        onPreviewGenerated({ quality, generationMs }) {
+            canvas.dataset.previewRevision = String(++previewRevision);
+            canvas.dataset.previewQuality = quality;
+            canvas.dataset.previewGenerationMs = generationMs.toFixed(1);
+        }
+    });
     const gardenController = createGardenController({
         store,
         sceneManager,
@@ -119,10 +130,10 @@ export function createApp() {
     let hasActivatedCreator = false;
     let hasActivatedGarden = false;
 
-    const regenPreviewDebounced = debounce(() => {
+    const livePreview = createLivePreviewScheduler(() => {
         const state = store.getState();
         creatorController.regeneratePreview(state.baseSeed, state.params, { previewQuality: true });
-    }, 72);
+    }, 48);
 
     function regenPreviewNow() {
         const state = store.getState();
@@ -151,6 +162,7 @@ export function createApp() {
             }
             hasActivatedGarden = true;
             sceneManager.setMode('garden');
+            engine.renderer.requestShadowUpdate();
             gardenController.clearSelection();
             pointerSystem.setTapHandler((x, y) => gardenController.onPointerTap(x, y));
             cameraRig.setAutoRotate(false);
@@ -158,6 +170,7 @@ export function createApp() {
         },
         onActivateCreator(active) {
             if (!active) {
+                livePreview.cancel();
                 if (hasActivatedCreator) creatorView = cameraRig.getView();
                 pointerSystem.setTapHandler(null);
                 cameraRig.setAutoRotate(false);
@@ -165,6 +178,7 @@ export function createApp() {
             }
             hasActivatedCreator = true;
             sceneManager.setMode('creator');
+            engine.renderer.requestShadowUpdate();
             gardenController.clearSelection();
             pointerSystem.setTapHandler(() => creatorController.wake());
             if (!creatorController.getDescriptor()) regenPreviewNow();
@@ -287,6 +301,10 @@ export function createApp() {
             }
             const target = cameraRig.getTarget();
             const position = gardenManager.findOpenPosition(target.x, target.z);
+            if (!position) {
+                ui.toast.show('圆台上没有足够的种植空间', 1600);
+                return;
+            }
             if (gardenController.placeAt(position.x, position.z)) {
                 canvas.dataset.lastPlacementMs = (performance.now() - started).toFixed(1);
                 ui.toast.show('已放置', 800);
@@ -330,9 +348,9 @@ export function createApp() {
         },
         onExport() { exportCurrent(); },
         onShare() { shareCurrent(); },
-        onParamsLiveChange() { regenPreviewDebounced(); },
+        onParamsLiveChange() { livePreview.schedule(); },
         onParamsCommit() {
-            regenPreviewDebounced.cancel();
+            livePreview.cancel();
             if (store.getState().mode === 'creator') regenPreviewNow();
         },
         onMoodChange() {
@@ -409,7 +427,7 @@ export function createApp() {
     return api;
 
     function dispose() {
-        regenPreviewDebounced.cancel();
+        livePreview.cancel();
         writeURLDebounced.cancel();
         unsubscribeTemplates();
         unsubscribeStore();

@@ -2,8 +2,8 @@
  * 持久化：localStorage 花园 + URL hash 双向同步
  *
  * 两种分享锚点：
- * - URL hash `#s=G1-...` 单植物 seed（造物模式调出的当前植物）
- * - URL hash `#g=P-...` 花园快照（可选）
+ * - URL hash `#s=G2-...` 单植物 seed（兼容旧 G1）
+ * - URL hash `#g=P2-...` 花园快照（兼容旧 P）
  * - localStorage 持续保存花园与最近植物
  */
 
@@ -39,25 +39,22 @@ export function writeGardenToURL(garden) {
     updateHash({ g: encoded || undefined });
 }
 
-const _writeHashDebounced = debounce((entries) => {
+let pendingHashEntries = {};
+
+const _writeHashDebounced = debounce(() => {
     try {
         const url = new URL(window.location.href);
+        const entries = pendingHashEntries;
+        pendingHashEntries = {};
+        const current = new URLSearchParams(url.hash.replace(/^#/, ''));
         for (const [k, v] of Object.entries(entries)) {
             if (v === undefined || v === '') {
-                url.searchParams; // noop guard
-                url.hash = url.hash; // noop
-            }
-            if (v === undefined || v === '') {
-                // remove
-                const cur = new URLSearchParams(url.hash.replace(/^#/, ''));
-                cur.delete(k);
-                url.hash = cur.toString();
+                current.delete(k);
             } else {
-                const cur = new URLSearchParams(url.hash.replace(/^#/, ''));
-                cur.set(k, v);
-                url.hash = cur.toString();
+                current.set(k, v);
             }
         }
+        url.hash = current.toString();
         window.history.replaceState(null, '', url);
     } catch (err) {
         console.warn('writeHashDebounced failed:', err);
@@ -65,7 +62,8 @@ const _writeHashDebounced = debounce((entries) => {
 }, 200);
 
 function updateHash(entries) {
-    _writeHashDebounced(entries);
+    pendingHashEntries = { ...pendingHashEntries, ...entries };
+    _writeHashDebounced();
 }
 
 export function saveGarden(garden) {
