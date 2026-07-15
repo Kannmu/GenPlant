@@ -1,5 +1,4 @@
 node_modules/
-dist/
 *.log
 *trae*
 project_rules.md
