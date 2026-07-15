@@ -1,25 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GenPlant</title>
-    <link rel="stylesheet" href="style.css"> <!-- 链接到样式表 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#eaf7d4">
+    <title>GenPlant · 一方植物花园</title>
+    <link rel="preconnect" href="https://esm.sh">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="app-container">
-        <div id="ui-panel">
-            <input type="number" id="seedInput" step="1" placeholder="Input Seed or Random Generated">
-            <button id="generateBtn">Generate Plant</button>
-            <button id="randomBtn">Random Plant</button>
-            <button id="resetCameraButton">Reset Camera</button>
-            <button id="exportButton">Export Model</button>
-            <a id="homePageButton" href="https://kannmu.top/" target="_blank" class="nav-button">Home Page</a>
-            <a id="githubRepoButton" href="https://github.com/Kannmu/GenPlant" target="_blank" class="nav-button">Github Repo</a>
+    <!-- 全屏舞台：canvas 与 overlay 各自铺满，互不干扰 -->
+    <div id="stage">
+        <canvas id="three-canvas"></canvas>
+
+        <!-- 浮动玻璃 overlay：默认 pointer-events:none，仅实际控件接收事件 -->
+        <div id="overlay">
+
+            <!-- 顶部栏：种子输入 + 模式切换 -->
+            <header id="topbar" class="glass">
+                <form id="seedForm" class="seed-row">
+                    <span class="seed-glyph" aria-hidden="true">❀</span>
+                    <input type="text" id="seedInput" inputmode="numeric" autocomplete="off"
+                           spellcheck="false" placeholder="粘贴种子 / 留空随机" />
+                    <button type="button" id="copySeedBtn" class="icon-btn" title="复制种子">⧉</button>
+                </form>
+
+                <nav id="modeTabs" class="tabs">
+                    <button type="button" data-mode="garden" class="tab active">花园</button>
+                    <button type="button" data-mode="creator" class="tab">造物</button>
+                </nav>
+
+                <a class="nav-button" href="https://kannmu.top/" target="_blank" rel="noopener">主页</a>
+                <a class="nav-button" href="https://github.com/Kannmu/GenPlant" target="_blank" rel="noopener">GitHub</a>
+            </header>
+
+            <!-- 造物面板：可折叠滑块组 -->
+            <aside id="creatorPanel" class="glass panel hidden">
+                <div class="panel-head">
+                    <h2>混沌参数</h2>
+                    <button type="button" id="panelToggle" class="icon-btn" title="折叠">–</button>
+                </div>
+                <div id="sliders" class="sliders"></div>
+                <p class="panel-foot">拖动滑块，植物从简单输入长成复杂形态。所有参数都是种子的一部分，可分享。</p>
+            </aside>
+
+            <!-- 底部工具栏 -->
+            <footer id="toolbar" class="glass">
+                <button type="button" id="randomBtn">🎲 随机种子</button>
+                <button type="button" id="generateBtn">✦ 生成</button>
+                <button type="button" id="plantInGardenBtn" class="hidden">🌱 种入花园</button>
+                <button type="button" id="undoBtn" disabled>↶ 撤销</button>
+                <button type="button" id="deleteBtn" disabled>🗑 删除</button>
+                <button type="button" id="shareBtn">🔗 分享</button>
+                <button type="button" id="exportBtn">⭳ 导出 GLB</button>
+                <button type="button" id="resetCameraBtn">⟳ 视角</button>
+                <button type="button" id="clearBtn">✕ 清空</button>
+            </footer>
+
+            <div id="hint" class="hint">轻点空地放置 · 拖动旋转 · 双指缩放</div>
+            <div id="toast" class="toast" role="status" aria-live="polite"></div>
         </div>
-        <canvas id="three-canvas"></canvas> <!-- Three.js的渲染目标 -->
     </div>
 
-    <script type="module" src="js/main.js"></script> <!-- 主脚本，使用ES模块方式加载 -->
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>

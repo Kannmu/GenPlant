@@ -120,9 +120,10 @@ export function safeNormalize(vector, fallback = new THREE.Vector3(0, 1, 0)) {
  * @param {number} radius - 半径
  * @param {number} length - 长度
  * @param {Object} config - 配置参数
+ * @param {number} [previewScale=1] - 预览模式下分段缩放（<1 降分辨率）
  * @returns {Object} 包含径向和管状分段数
  */
-export function calculateTubeSegments(radius, length, config) {
+export function calculateTubeSegments(radius, length, config, previewScale = 1) {
     // 参数验证
     if (typeof radius !== 'number' || radius <= 0) {
         throw new Error('Radius must be a positive number');
@@ -143,12 +144,12 @@ export function calculateTubeSegments(radius, length, config) {
     
     const radialSegments = Math.max(
         config.MIN_RADIAL_SEGMENTS,
-        Math.round(radius * config.RADIAL_SEGMENTS_MULTIPLIER)
+        Math.round(radius * config.RADIAL_SEGMENTS_MULTIPLIER * previewScale)
     );
-    
+
     const tubularSegments = Math.max(
         config.MIN_TUBULAR_SEGMENTS,
-        Math.floor(length * config.TUBULAR_SEGMENTS_MULTIPLIER)
+        Math.floor(length * config.TUBULAR_SEGMENTS_MULTIPLIER * previewScale)
     );
     
     return { radialSegments, tubularSegments };
@@ -160,12 +161,12 @@ export function calculateTubeSegments(radius, length, config) {
  */
 export function disposeObject(object) {
     if (!object) return;
-    
+
     object.traverse(function (child) {
         if (child.geometry) {
-            child.geometry.dispose();
+            disposeGeometry(child.geometry);
         }
-        
+
         if (child.material) {
             if (Array.isArray(child.material)) {
                 child.material.forEach(material => {
@@ -179,28 +180,40 @@ export function disposeObject(object) {
 }
 
 /**
+ * 释放几何体资源（带重复释放守卫）
+ */
+function disposeGeometry(geometry) {
+    if (!geometry || geometry.userData?.disposed) return;
+    geometry.userData = geometry.userData || {};
+    geometry.userData.disposed = true;
+    geometry.dispose();
+}
+
+/**
  * 释放材质资源
- * @param {THREE.Material} material - 要释放的材质
+ * 跳过被标记为共享（userData.shared）的材质，它们由 disposeSharedMaterials 统一释放。
  */
 function disposeMaterial(material) {
     if (!material) return;
-    
-    // 释放所有可能的纹理贴图
+    if (material.userData && material.userData.shared) return; // 共享材质不随单株释放
+    if (material.userData && material.userData.disposed) return;
+
     const textureProperties = [
         'map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap',
         'bumpMap', 'displacementMap', 'specularMap', 'envMap', 'lightMap',
         'alphaMap', 'gradientMap', 'clearcoatMap', 'clearcoatNormalMap',
         'clearcoatRoughnessMap', 'transmissionMap', 'thicknessMap'
     ];
-    
+
     textureProperties.forEach(prop => {
         if (material[prop] && typeof material[prop].dispose === 'function') {
             material[prop].dispose();
         }
     });
-    
-    // 释放材质本身
+
     if (typeof material.dispose === 'function') {
+        material.userData = material.userData || {};
+        material.userData.disposed = true;
         material.dispose();
     }
 }

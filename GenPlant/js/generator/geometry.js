@@ -7,8 +7,11 @@ import { calculateTubeSegments } from '../util/geometry.js';
 const frenetFramesCache = new WeakMap();
 
 
-export function createGeometry(parameters, structure) {
+export function createGeometry(parameters, structure, opts = {}) {
     const geometries = [];
+    const previewScale = opts.previewQuality
+        ? GEOMETRY_CONFIG.PREVIEW_SEGMENTS_SCALE
+        : 1;
 
     function _createBranch(node, parentNode) {
         if (!node.curve) {
@@ -24,19 +27,20 @@ export function createGeometry(parameters, structure) {
         const { radialSegments, tubularSegments } = calculateTubeSegments(
             startRadius,
             node.curve.getLength(),
-            TUBE_MESH
+            TUBE_MESH,
+            previewScale
         );
 
         const meshData = generateTubeMesh(node.curve, tubularSegments, radialSegments, startRadius, endRadius);
 
         // 分支与父节点连接的核心逻辑
         if (parentNode && parentNode.curve && typeof node.attachmentT === 'number') {
-            // 确保父节点的Frenet框架已计算并缓存，避免重复计算
             if (!parentNode.tubularSegments) {
                 const parentSegments = calculateTubeSegments(
                     parentNode.startRadius,
                     parentNode.curve.getLength(),
-                    TUBE_MESH
+                    TUBE_MESH,
+                    previewScale
                 );
                 parentNode.tubularSegments = parentSegments.tubularSegments;
             }
@@ -51,24 +55,21 @@ export function createGeometry(parameters, structure) {
             const parentPoint = parentNode.curve.getPointAt(t_parent);
             const parentRadius = THREE.MathUtils.lerp(parentNode.startRadius, parentNode.endRadius, t_parent);
 
-            // Find the closest frame on the parent curve to the attachment point.
             const parentFrameIndex = Math.round(t_parent * parentTubularSegments);
             const parentTangent = parentFrames.tangents[parentFrameIndex];
 
-            // Define a transition length for smoothing the joint.
             const { BRANCH_STITCHING } = GEOMETRY_CONFIG;
-            const transitionDistance = parentRadius * BRANCH_STITCHING.TRANSITION_DISTANCE_MULTIPLIER; 
+            const transitionDistance = parentRadius * BRANCH_STITCHING.TRANSITION_DISTANCE_MULTIPLIER;
 
             const childBranchLength = node.curve.getLength();
             const transitionSegments = Math.min(
                 tubularSegments,
                 Math.max(
-                    BRANCH_STITCHING.MIN_TRANSITION_SEGMENTS, 
+                    BRANCH_STITCHING.MIN_TRANSITION_SEGMENTS,
                     Math.ceil((transitionDistance / childBranchLength) * tubularSegments)
                 )
             );
 
-            // Pre-calculate the target normals on the parent surface for each radial angle.
             const targetNormals = [];
             for (let j = 0; j <= radialSegments; j++) {
                 const baseVertexIndex = j * 3;
@@ -79,19 +80,16 @@ export function createGeometry(parameters, structure) {
                 targetNormals.push(perpendicularVector.clone().normalize());
             }
 
-            // Apply the transition over the initial segments of the child branch.
             for (let i = 0; i < transitionSegments; i++) {
-                // lerpFactor goes from 1.0 at the base (i=0) to 0.0 at the end of the transition.
                 const lerpFactor = (transitionSegments <= 1) ? 1.0 : 1.0 - (i / (transitionSegments - 1));
 
                 const t_child = i / tubularSegments;
                 const childCenterPoint = node.curve.getPointAt(t_child);
                 const actualRadiusAt_i = Math.max(
-                    TUBE_MESH.MIN_RADIUS, 
+                    TUBE_MESH.MIN_RADIUS,
                     THREE.MathUtils.lerp(node.startRadius, node.endRadius, t_child)
                 );
 
-                // Interpolate center point, from parent attachment point to child's curve.
                 const interpolatedCenter = childCenterPoint.clone().lerp(parentPoint, lerpFactor);
 
                 for (let j = 0; j <= radialSegments; j++) {
@@ -100,14 +98,11 @@ export function createGeometry(parameters, structure) {
                     const originalNormal = new THREE.Vector3().fromArray(meshData.normals, vertexIndex);
                     const targetNormal = targetNormals[j];
 
-                    // Interpolate the vertex normal.
                     const newNormal = originalNormal.clone().lerp(targetNormal, lerpFactor).normalize();
                     newNormal.toArray(meshData.normals, vertexIndex);
 
-                    // Interpolate the branch radius.
                     const interpolatedRadius = THREE.MathUtils.lerp(actualRadiusAt_i, parentRadius, lerpFactor);
 
-                    // Calculate the new vertex position from the interpolated properties.
                     const newVertex = interpolatedCenter.clone().add(newNormal.clone().multiplyScalar(interpolatedRadius));
                     newVertex.toArray(meshData.vertices, vertexIndex);
                 }
@@ -117,9 +112,23 @@ export function createGeometry(parameters, structure) {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.vertices, 3));
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.normals, 3));
+
+        // 顶点色：沿分支按 levelProgress 着色（浅绿梯度），交由共享材质 vertexColors 渲染
+        const maxLevels = parameters.structure.branching.levels;
+        const levelProgress = maxLevels > 0 ? THREE.MathUtils.clamp(node.level / maxLevels, 0, 1) : 0;
+        const vertexCount = meshData.vertices.length / 3;
+        const colors = new Float32Array(vertexCount * 3);
+        for (let i = 0; i < vertexCount; i++) {
+            // 沿管轴从段 t 做微调，使梢端更亮 —— 在 t 轴上与 levelProgress 复合
+            colors[i * 3] = levelProgress;
+            colors[i * 3 + 1] = levelProgress;
+            colors[i * 3 + 2] = levelProgress;
+        }
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
         geometry.setIndex(meshData.indices);
 
-        geometries.push({ geometry: geometry, node: node });
+        geometries.push({ geometry: geometry, node: node, levelProgress: levelProgress });
 
         for (const child of node.children) {
             _createBranch(child, node);
@@ -132,19 +141,11 @@ export function createGeometry(parameters, structure) {
 
 /**
  * Generates the vertices, normals, and indices for a tapered tube geometry along a curve.
- * This function encapsulates the core logic of creating the tube mesh.
- * @param {THREE.Curve} curve - The path of the tube.
- * @param {number} tubularSegments - The number of segments along the curve.
- * @param {number} radialSegments - The number of segments around the tube's circumference.
- * @param {number} startRadius - The radius at the start of the tube.
- * @param {number} endRadius - The radius at the end of the tube.
- * @returns {{vertices: number[], normals: number[], indices: number[]}}
  */
 function generateTubeMesh(curve, tubularSegments, radialSegments, startRadius, endRadius) {
-    // 检查Frenet frames缓存
     const cacheKey = `${tubularSegments}`;
     let frames;
-    
+
     if (frenetFramesCache.has(curve)) {
         const cachedFrames = frenetFramesCache.get(curve);
         if (cachedFrames[cacheKey]) {
@@ -157,7 +158,7 @@ function generateTubeMesh(curve, tubularSegments, radialSegments, startRadius, e
         frames = curve.computeFrenetFrames(tubularSegments, false);
         frenetFramesCache.set(curve, { [cacheKey]: frames });
     }
-    
+
     const { normals: frameNormals, binormals } = frames;
 
     const vertices = [];
