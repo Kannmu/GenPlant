@@ -1,25 +1,183 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GenPlant</title>
-    <link rel="stylesheet" href="style.css"> <!-- 链接到样式表 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#dcebd6">
+    <meta name="description" content="GenPlant - 从一个种子生长出独一无二的程序化植物。">
+    <title>GenPlant · 生命种子</title>
+    <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div id="app-container">
-        <div id="ui-panel">
-            <input type="number" id="seedInput" step="1" placeholder="Input Seed or Random Generated">
-            <button id="generateBtn">Generate Plant</button>
-            <button id="randomBtn">Random Plant</button>
-            <button id="resetCameraButton">Reset Camera</button>
-            <button id="exportButton">Export Model</button>
-            <a id="homePageButton" href="https://kannmu.top/" target="_blank" class="nav-button">Home Page</a>
-            <a id="githubRepoButton" href="https://github.com/Kannmu/GenPlant" target="_blank" class="nav-button">Github Repo</a>
-        </div>
-        <canvas id="three-canvas"></canvas> <!-- Three.js的渲染目标 -->
-    </div>
+<body data-mood="morning">
+    <main id="stage">
+        <canvas id="three-canvas" aria-label="可交互的三维植物庭院"></canvas>
 
-    <script type="module" src="js/main.js"></script> <!-- 主脚本，使用ES模块方式加载 -->
+        <div id="overlay">
+            <header id="topbar">
+                <button type="button" id="identityBtn" class="brand-lockup surface" aria-label="查看当前植物种子">
+                    <span class="brand-mark" aria-hidden="true"><i data-lucide="flower-2"></i></span>
+                    <span class="brand-copy">
+                        <strong>GenPlant</strong>
+                        <small id="plantNameTop">未命名植株</small>
+                    </span>
+                </button>
+
+                <nav id="modeTabs" class="segmented surface" aria-label="游玩模式">
+                    <button type="button" data-mode="creator" class="tab active" aria-pressed="true">
+                        <i data-lucide="wand-sparkles" aria-hidden="true"></i><span>造物</span>
+                    </button>
+                    <button type="button" data-mode="garden" class="tab" aria-pressed="false">
+                        <i data-lucide="trees" aria-hidden="true"></i><span>花园</span>
+                    </button>
+                </nav>
+
+                <div class="environment-tools surface" aria-label="环境控制">
+                    <button type="button" id="windBtn" class="icon-button" data-tooltip="风力：微风" aria-label="切换风力">
+                        <i data-lucide="wind" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" id="moodBtn" class="icon-button" data-tooltip="光线：晨光" aria-label="切换光线">
+                        <i data-lucide="sun-medium" aria-hidden="true"></i>
+                    </button>
+                    <button type="button" id="seedBtn" class="icon-button" data-tooltip="植物种子" aria-label="打开植物种子">
+                        <i data-lucide="binary" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </header>
+
+            <aside id="creatorPanel" class="studio-panel surface">
+                <div class="panel-head">
+                    <div>
+                        <span class="eyebrow">LIVING SYSTEM</span>
+                        <h1>植物基因</h1>
+                    </div>
+                    <button type="button" id="panelToggle" class="icon-button" data-tooltip="收起基因面板" aria-label="收起基因面板">
+                        <i data-lucide="panel-left-close" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <div class="panel-scroll">
+                    <section class="control-section" aria-labelledby="presetTitle">
+                        <div class="section-title">
+                            <h2 id="presetTitle">形态原型</h2>
+                            <span>4 原型</span>
+                        </div>
+                        <div id="presetControls" class="preset-controls" role="group" aria-label="形态原型">
+                            <button type="button" data-preset="canopy"><i data-lucide="cloud-sun"></i><span>云冠</span></button>
+                            <button type="button" data-preset="breeze"><i data-lucide="feather"></i><span>风迹</span></button>
+                            <button type="button" data-preset="coral"><i data-lucide="git-branch"></i><span>珊瑚</span></button>
+                            <button type="button" data-preset="blossom"><i data-lucide="sparkles"></i><span>星芽</span></button>
+                        </div>
+                    </section>
+
+                    <section class="control-section gene-controls" aria-labelledby="geneTitle">
+                        <div class="section-title">
+                            <h2 id="geneTitle">四个基因</h2>
+                            <span>实时遗传</span>
+                        </div>
+                        <label class="gene-control" for="genePosture">
+                            <span><i data-lucide="move-up"></i>姿态</span><output id="genePostureValue">68</output>
+                            <input id="genePosture" type="range" min="0" max="100" value="68">
+                        </label>
+                        <label class="gene-control" for="geneAbundance">
+                            <span><i data-lucide="sprout"></i>繁茂</span><output id="geneAbundanceValue">62</output>
+                            <input id="geneAbundance" type="range" min="0" max="100" value="62">
+                        </label>
+                        <label class="gene-control" for="geneRhythm">
+                            <span><i data-lucide="waves"></i>律动</span><output id="geneRhythmValue">45</output>
+                            <input id="geneRhythm" type="range" min="0" max="100" value="45">
+                        </label>
+                        <label class="gene-control" for="geneBloom">
+                            <span><i data-lucide="flower"></i>花意</span><output id="geneBloomValue">28</output>
+                            <input id="geneBloom" type="range" min="0" max="100" value="28">
+                        </label>
+                    </section>
+
+                    <section class="control-section" aria-labelledby="paletteTitle">
+                        <div class="section-title">
+                            <h2 id="paletteTitle">叶色</h2>
+                            <span>种子谱系</span>
+                        </div>
+                        <div id="paletteControls" class="palette-controls" role="group" aria-label="叶色">
+                            <button type="button" data-palette="-1" class="active" aria-label="种子原色" data-tooltip="种子原色"><span class="swatch seed-swatch"></span></button>
+                            <button type="button" data-palette="0" aria-label="苔绿" data-tooltip="苔绿"><span class="swatch moss"></span></button>
+                            <button type="button" data-palette="1" aria-label="春青" data-tooltip="春青"><span class="swatch spring"></span></button>
+                            <button type="button" data-palette="2" aria-label="暖金" data-tooltip="暖金"><span class="swatch amber"></span></button>
+                            <button type="button" data-palette="3" aria-label="绯叶" data-tooltip="绯叶"><span class="swatch coral"></span></button>
+                            <button type="button" data-palette="4" aria-label="月紫" data-tooltip="月紫"><span class="swatch violet"></span></button>
+                        </div>
+                    </section>
+
+                    <details id="advancedControls" class="advanced-controls">
+                        <summary>精细调节 <span>17 项</span></summary>
+                        <div id="sliders" class="sliders"></div>
+                    </details>
+                </div>
+            </aside>
+
+            <aside id="libraryPanel" class="library-panel surface hidden">
+                <div class="panel-head">
+                    <div>
+                        <span class="eyebrow">ARCHIVE</span>
+                        <h1>植物库</h1>
+                    </div>
+                    <div class="panel-head-actions">
+                        <span id="templateCount" class="template-count">0</span>
+                        <button type="button" id="libraryToggle" class="icon-button" data-tooltip="收起植物库" aria-label="收起植物库">
+                            <i data-lucide="panel-left-close" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="templateList" class="template-list"></div>
+                <div id="emptyLibrary" class="empty-library">
+                    <i data-lucide="library" aria-hidden="true"></i>
+                    <span>暂无植物模板</span>
+                </div>
+            </aside>
+
+            <section id="plantCard" class="plant-card" aria-live="polite">
+                <span id="specimenIndex">SPECIMEN 001</span>
+                <h2 id="plantName">未命名植株</h2>
+                <p id="plantTraits">舒展 · 轻盈 · 初花</p>
+                <small id="gardenCount">花园尚未种植</small>
+            </section>
+
+            <section id="seedPanel" class="seed-panel surface hidden" aria-label="植物种子">
+                <div class="seed-panel-head">
+                    <div>
+                        <span class="eyebrow">SHAREABLE DNA</span>
+                        <h2>专属种子</h2>
+                    </div>
+                    <button type="button" id="closeSeedBtn" class="icon-button" aria-label="关闭种子面板"><i data-lucide="x"></i></button>
+                </div>
+                <form id="seedForm" class="seed-row">
+                    <input type="text" id="seedInput" autocomplete="off" spellcheck="false" aria-label="植物种子" placeholder="粘贴一枚植物种子">
+                    <button type="button" id="copySeedBtn" class="command-button"><i data-lucide="copy"></i><span>复制</span></button>
+                </form>
+            </section>
+
+            <footer id="toolbar" class="tool-dock surface">
+                <button type="button" id="randomBtn" class="icon-button creator-only" data-tooltip="全新种子" aria-label="全新种子"><i data-lucide="dices"></i></button>
+                <button type="button" id="mutateBtn" class="icon-button creator-only" data-tooltip="轻微变异" aria-label="轻微变异"><i data-lucide="shuffle"></i></button>
+                <button type="button" id="generateBtn" class="primary-command garden-only hidden"><i data-lucide="sprout"></i><span>放置</span></button>
+                <button type="button" id="saveTemplateBtn" class="primary-command creator-only"><i data-lucide="save"></i><span>保存模板</span></button>
+                <button type="button" id="undoBtn" class="icon-button garden-only hidden" data-tooltip="撤销" aria-label="撤销" disabled><i data-lucide="undo-2"></i></button>
+                <button type="button" id="deleteBtn" class="icon-button garden-only hidden" data-tooltip="删除选中植物" aria-label="删除选中植物" disabled><i data-lucide="trash-2"></i></button>
+                <button type="button" id="shareBtn" class="icon-button" data-tooltip="分享种子" aria-label="分享种子"><i data-lucide="share-2"></i></button>
+                <button type="button" id="resetCameraBtn" class="icon-button" data-tooltip="重置视角" aria-label="重置视角"><i data-lucide="focus"></i></button>
+                <button type="button" id="moreBtn" class="icon-button" data-tooltip="更多" aria-label="更多操作" aria-expanded="false"><i data-lucide="ellipsis"></i></button>
+            </footer>
+
+            <div id="moreMenu" class="more-menu surface hidden">
+                <button type="button" id="exportBtn"><i data-lucide="download"></i><span>导出 GLB</span></button>
+                <button type="button" id="clearBtn"><i data-lucide="eraser"></i><span>清空花园</span></button>
+                <a href="https://github.com/Kannmu/GenPlant" target="_blank" rel="noopener"><i data-lucide="code-xml"></i><span>查看项目</span></a>
+            </div>
+
+            <div id="toast" class="toast" role="status" aria-live="polite"></div>
+            <div id="webglFallback" class="webgl-fallback hidden" role="alert">当前设备无法启动 3D 场景，请开启硬件加速后重试。</div>
+        </div>
+    </main>
+
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
